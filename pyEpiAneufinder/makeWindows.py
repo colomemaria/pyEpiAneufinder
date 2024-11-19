@@ -28,7 +28,7 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
             continue
 
         # Calculate the number of windows and window start positions
-        print("Calculating number of windows")
+        print("Calculating number of windows for "+ chr_name)
         seq_length = len(chr_seq)
         num_windows = seq_length // window_size
         window_starts = [i * window_size for i in range(num_windows)]
