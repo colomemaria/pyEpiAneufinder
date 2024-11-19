@@ -39,11 +39,7 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
             end = start + window_size
             window_seq = chr_seq[start:end]
 
-            # Calculate GC and AT content
-            #c_content=nt_search(window_seq,"C")
-            #g_content = nt_search(window_seq, "G")
-            #a_content = nt_search(window_seq, "A")
-            #t_content = nt_search(window_seq, "T")
+            # Calculate GC content
             A_content=window_seq.seq.count("A")
             C_content = window_seq.seq.count("C")
             T_content = window_seq.seq.count("T")
@@ -63,7 +59,6 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
                         (blacklist_df['start'] < end) &
                         (blacklist_df['end'] > start)).any()
 
-            # Append window information to the list if it does not overlap with the blacklist
             if not overlaps:
                 windows.append({
                     'chromosome': chr_name,
@@ -74,18 +69,9 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
                     'N': total_N
                 })
 
-    # Convert the list of dictionaries to a Pandas DataFrame
     windows_df = pd.DataFrame(windows)
-
-    # Return the DataFrame
     return windows_df
 
-# Example usage:
-# genome_file = "path_to_hg38_genome.fasta"
-# bed_file = "path_to_blacklist.bed"
-# window_size = 1000
-# exclude = ["chrX", "chrY"]  # Chromosomes to exclude
-# windows = make_windows(genome_file, bed_file, window_size, exclude)
 if __name__ =="__main__":
     blacklist_file="/home/katia/Helmholz/epiAneufinder/revisions/hg19.blacklist.v2.bed"
     genome_file="/home/katia/Helmholz/epiAneufinderPython/hg19/hg19.fa"
