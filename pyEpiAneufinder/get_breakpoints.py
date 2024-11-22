@@ -1,3 +1,6 @@
+import numpy as np
+import pandas as pd
+
 def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
         
     #Save the position and the distance of the breakpoint
@@ -64,4 +67,4 @@ def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
                 bp_filtered.append(bp[i])
                 dist_bp_filtered.append(dist_bp[i])
  
-    return([bp_filtered, dist_bp_filtered])
+    return(pd.DataFrame({"breakpoint":bp_filtered,"ad_dist":dist_bp_filtered}))

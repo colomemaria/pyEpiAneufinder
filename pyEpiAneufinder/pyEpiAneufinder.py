@@ -18,10 +18,44 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
 
     # GC correction
 
+    # ----------------------------------------------------------------------- 
     # Estimating break points
+    # ----------------------------------------------------------------------- 
 
-    #Pruning break points and annotating CNV status of each segment
+    #Assumption: count matrix as anndata object (might need to be changed later)
+    print("Calculating distance AD")
 
+    unique_chroms=counts.var["chr"].unique()
+
+    cluster_ad = {}
+    for i in range(counts.shape[0]):
+        cell_name = counts.obs.cellID[i]
+        cluster_ad[cell_name]=pd.DataFrame()
+        for chrom in unique_chroms:
+            #Identify the breakpoints
+            bp_chrom=getbp(counts.X[i,counts.var["chr"]==chrom].toarray().flatten(),
+                           k=k,minsize=minsize,minsizeCNV=minsizeCNV)
+            bp_chrom["chr"]=chrom
+        
+            #Merge the pandas data frames across chromosomes to one per cell
+            cluster_ad[cell_name] = pd.concat([cluster_ad[cell_name],bp_chrom],axis=0,ignore_index=True)
+            
+    print("Successfully identified breakpoints")
+
+    # -----------------------------------------------------------------------    
+    # Pruning break points and annotating CNV status of each segment
+    # ----------------------------------------------------------------------- 
+
+    #Prune irrelevant breakpoints
+    clusters_pruned = {}
+    for cell, bp_frame in cluster_ad.items():
+        clusters_pruned[cell] = threshold_dist_values(bp_frame)
+
+    print("Successfully discarded irrelevant breakpoints")
+
+    # ----------------------------------------------------------------------- 
     # Plot the result as a karyogram
+    # ----------------------------------------------------------------------- 
+
     if(plotKaryo):
         plot_karyo_gainloss()
