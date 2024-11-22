@@ -47,12 +47,54 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
     # ----------------------------------------------------------------------- 
 
     #Prune irrelevant breakpoints
-    clusters_pruned = {}
+    breakpoints_pruned = {}
     for cell, bp_frame in cluster_ad.items():
-        clusters_pruned[cell] = threshold_dist_values(bp_frame)
+        
+        breakpoints_pruned[cell] = threshold_dist_values(bp_frame)
 
     print("Successfully discarded irrelevant breakpoints")
 
+    #Number of bins per chromosome
+    num_bins_chrom = counts.var["chr"].value_counts(sort=False)
+
+    #Convert breakpoints into segment annotations per cell
+    clusters_pruned={}
+    for cell, bp_frame in breakpoints_pruned.items():
+        
+        print(cell)
+        
+        counter=1
+        cluster_list=[]
+        
+        for chrom in unique_chroms:
+            
+            #Extract all breakpoints from this chromosome
+            bp_chrom = bp_frame.breakpoint[bp_frame.chr==chrom]
+            
+            #If no breakpoints exist for this chromsome, save all windows as one segment
+            if bp_chrom.empty:
+                cluster_list += [counter] * num_bins_chrom[chrom]
+            else:
+                
+                #Otherwise calculate the length of each segment (in the right order)
+                bp_chrom = sorted([0,num_bins_chrom[chrom]]+bp_chrom.tolist())
+                segment_size = np.diff(bp_chrom)
+                
+                #Add for each segment the indices
+                cluster_list += np.repeat(range(counter,len(segment_size)+counter),segment_size).tolist()
+            
+            #Decide which index the next segment should get
+            counter = max(cluster_list)+1
+    
+        #Save all indices as a new dictonary entry
+        clusters_pruned[cell]=cluster_list
+
+    #Assign the somies for each cell
+    somies_ad={}
+    for cell, cluster_cell in clusters_pruned.items():
+        somies_ad[cell]=assign_gainloss(counts_filtered.X[counts_filtered.obs.cellID == cell,].toarray().flatten(),
+                                        cluster_cell,uq,lq)
+        
     # ----------------------------------------------------------------------- 
     # Plot the result as a karyogram
     # ----------------------------------------------------------------------- 
