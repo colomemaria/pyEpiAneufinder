@@ -2,7 +2,22 @@ import numpy as np
 import pandas as pd
 
 def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
-        
+    """
+    Function to identify breakpoints (recursive research)
+
+    Parameters
+    ----------
+    seq_data: Sequential data - Counts per bin for a chromosome (as a numpy array)
+    minsize: Integer. Resolution at the level of ins. Default: 1. Setting it to higher numbers runs the algorithm faster at the cost of resolution
+    k: Integer. Find 2^k segments per chromosome
+    minsizeCNV: Integer. Number of consecutive bins to constitute a possible CNV
+
+    Output
+    ------
+    A Pandas data frame with all breakpoint and the AD distance at this breakpoint
+    
+    """
+            
     #Save the position and the distance of the breakpoint
     bp=[] #save only integer
     dist_bp=[]
@@ -41,12 +56,6 @@ def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
                     bp.append(bp_pos_shifted + total_position)
                     #Save also the maximum AD distance
                     dist_bp.append(max(dist_vector))
-                
-                #Check the CNVs have a certain size (would be nicer, but not exactly the R code)
-                #if (bp_pos_shifted > 0 + minsizeCNV - 1) & (bp_pos_shifted < (len(segement) - minsizeCNV)):
-                #    bp.append(bp_pos_shifted + total_position)
-                #    #Save also the maximum AD distance
-                #    dist_bp.append(max(dist_vector))
 
 
             #Add the length of this segement as a total counter
@@ -55,7 +64,7 @@ def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
     #Remove breakpoints at the beginning or the end of the segement that are too short
     bp_filtered=[]
     dist_bp_filtered=[]
-    #This distinction is another R artificate ...
+    #Make this distinction to be exactly the same as in the R version of epiAneufinder
     if minsizeCNV > 0: 
         for i in range(len(bp)):
             if (bp[i] > 0 + minsizeCNV-1) & (bp[i]< (len(seq_data)-minsizeCNV-1)) :

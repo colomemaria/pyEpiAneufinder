@@ -1,7 +1,20 @@
 import numpy as np
 
-# Function to calculate the AD statistic between two distributions
 def dist_ad(x,y):
+    """
+    Function to calculate the AD statistic between two distributions
+
+    Parameters
+    ----------
+    x: Numeric list with reads counts left of the breakpoint
+    y: Numeric list Vector with reads counts right of the breakpoint
+
+    Output
+    ------
+    Anderson-darling distance
+
+    """
+
     # Calculate lengths
     n = len(x)
     m = len(y)
@@ -33,8 +46,21 @@ def dist_ad(x,y):
     stat_ad = (sum_x / n) + (sum_y / m)
     return(stat_ad)
 
-# Function to calculate the breakpoints with AD stat given a series of data points
-def seq_dist_ad(seq_data,minsize=3):
+
+def seq_dist_ad(seq_data,minsize=1):
+    """
+    Function to calculate the breakpoints with AD stat given a series of data points
+
+    Parameters
+    ----------
+    seq_data: Normalized read counts per window (as a numeric list)
+    minsize: Integer. Resolution at the level of ins. Default: 1. Setting it to higher numbers runs the algorithm faster at the cost of resolution
+
+    Output
+    ------
+    List with distances for each potential breakpoint
+    
+    """
     
     #Create the list of breakpoints to test (with a stepsize of minsize)
     bp1 = np.arange(0, len(seq_data), minsize)

@@ -7,11 +7,22 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
 
-#Current output formats:
-#res: formated as the result table output
-#outdir: path where to save the karyogram
-#to give the karyogram a title
+
 def karyo_gainloss (res, outdir,title_karyo):
+    """
+    Function to plot the final karyogram
+
+    Parameters
+    ----------
+    res: Pandas data frame with position information in the first three columns (seq, start, end), followed by the CNV status of each cell
+    outdir: Path to save the karyogram image
+    title_karyo: Option to give a plot title
+
+    Output
+    ------
+    A filtered version of the input Pandas data frame
+    
+    """
 
     #Remove position information (only CNVs kept)
     data_matrix = res.drop(columns=["seq","start","end"])

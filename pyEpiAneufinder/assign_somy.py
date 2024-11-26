@@ -1,7 +1,20 @@
 import numpy as np
+import pandas as pd
 
 def threshold_dist_values(result_df):
+    """
+    Function to prune breakpoints
+
+    Parameters
+    ----------
+    results_df: Pandas data frame with the AD distance of the breakpoints (column called ad_dist)
+
+    Output
+    ------
+    A filtered version of the input Pandas data frame
     
+    """
+
     # Calculate the zscore (standardize the values)
     result_df['zscores'] = (result_df['ad_dist'] - result_df['ad_dist'].mean()) / result_df['ad_dist'].std()
     
@@ -15,7 +28,22 @@ def threshold_dist_values(result_df):
 
 
 def assign_gainloss(seq_data,cluster,uq=0.9,lq=0.1):
+    """
+    Function to assign CNV states
+
+    Parameters
+    ----------
+    seq_data: Sequential data - Counts per bin (as a numpy array)
+    cluster: Numeric list showing segment identity
+    uq: Upper quantile to trim to calculate the cluster means
+    lq: Lower quantile to trim to calculate the cluster means
+
+    Output
+    ------
+    List with CNV states for each window (0=loss, 1=base, 2=gain)
     
+    """
+        
     #Normalize data
     counts_normal = seq_data / np.mean(seq_data)
     counts_normal[counts_normal < 0] = 0
@@ -45,7 +73,21 @@ def assign_gainloss(seq_data,cluster,uq=0.9,lq=0.1):
 
 
 def compute_cluster_mean(x,lq,uq,qus_global):
+    """
+    Help function for assign_gainloss to calculate the trimmed mean
+
+    Parameters
+    ----------
+    x: Counts per bin for one segment (multiple adjacent windows with same CNV status) (as a numpy array)
+    uq: Upper quantile to trim to calculate the cluster means
+    lq: Lower quantile to trim to calculate the cluster means
+    qus_global: Quantiles of the global count distribution (list of of lower and upper quantile)
+
+    Output
+    ------
+    List with CNV states for each window (0=loss, 1=base, 2=gain)
     
+    """
     qus = np.quantile(x, [lq, uq])
 
     # Filter values within both cluster-specific and global quantiles
