@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from .distance_statistics import seq_dist_ad
+
 def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
     """
     Function to identify breakpoints (recursive research)

@@ -1,5 +1,10 @@
 import pandas as pd
 import numpy as np
+import time 
+
+from .get_breakpoints import getbp
+from .assign_somy import threshold_dist_values, assign_gainloss
+from .plotting import karyo_gainloss
 
 def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapiens.UCSC.hg38",
                     test='AD', reuse_existing=False, exclude=None,
@@ -53,57 +58,104 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
     # GC correction
 
     # ----------------------------------------------------------------------- 
+    # Debugging code to check the second part of the function
+    # ----------------------------------------------------------------------- 
+
+    import scanpy as sc
+    from scipy.sparse import csr_matrix
+
+    #Read GC corrected counts and annotations (from R version of epiAneufinder)
+    annot=pd.read_csv(input+"/sample_pea_annot.csv",sep=" ")
+
+    gc_counts=pd.read_csv("/Users/kschmid/Desktop/sample_pea_count.csv",sep=" ")
+    gc_counts = gc_counts.T
+    gc_counts.columns = ["win"+str(v) for v in list(gc_counts.columns.values)]
+
+    counts = sc.AnnData(gc_counts)
+
+    #Add window annotation
+    counts.var["seq"]=list(annot["seqnames"])
+    counts.var["start"]=list(annot["start"])
+    counts.var["end"]=list(annot["end"])
+    counts.obs["cellID"] = counts.obs.index.to_list()
+
+    #Convert matrix into a sparse matrix
+    counts.X = csr_matrix(counts.X)
+
+    # ----------------------------------------------------------------------- 
     # Estimating break points
     # ----------------------------------------------------------------------- 
 
     #Assumption: count matrix as anndata object (might need to be changed later)
     print("Calculating distance AD")
 
+    start = time.perf_counter()
+
     unique_chroms=counts.var["seq"].unique()
 
-    cluster_ad = {}
+    cluster_ad = pd.DataFrame()
     for i in range(counts.shape[0]):
         cell_name = counts.obs.cellID[i]
-        cluster_ad[cell_name]=pd.DataFrame()
         for chrom in unique_chroms:
             #Identify the breakpoints
             bp_chrom=getbp(counts.X[i,counts.var["seq"]==chrom].toarray().flatten(),
                            k=k,minsize=minsize,minsizeCNV=minsizeCNV)
+            bp_chrom["cell"]= cell_name
             bp_chrom["seq"]=chrom
         
             #Merge the pandas data frames across chromosomes to one per cell
-            cluster_ad[cell_name] = pd.concat([cluster_ad[cell_name],bp_chrom],axis=0,ignore_index=True)
-            
-    print("Successfully identified breakpoints")
+            cluster_ad = pd.concat([cluster_ad,bp_chrom],axis=0,ignore_index=True)
+
+    #Save the found breakpoints
+    cluster_ad.to_csv(outdir+"/breakpoints_unfiltered.csv")
+
+    end = time.perf_counter()
+    execution_time = (end - start)/60
+    print(f"Successfully identified breakpoints. Execution time: {execution_time:.2f} mins")
 
     # -----------------------------------------------------------------------    
     # Pruning break points and annotating CNV status of each segment
     # ----------------------------------------------------------------------- 
 
-    #Prune irrelevant breakpoints
-    breakpoints_pruned = {}
-    for cell, bp_frame in cluster_ad.items():
-        
-        breakpoints_pruned[cell] = threshold_dist_values(bp_frame)
+    print("Prunning breakpoints")
 
-    print("Successfully discarded irrelevant breakpoints")
+    start = time.perf_counter()
+
+    #Prune irrelevant breakpoints
+    breakpoints_pruned = pd.DataFrame()
+    for cell in cluster_ad["cell"].unique():
+        clusters_cell=cluster_ad[cluster_ad.cell==cell].copy()
+        bp_cell = threshold_dist_values(clusters_cell)
+
+        #Merge the pandas data frames across chromosomes to one per cell
+        breakpoints_pruned = pd.concat([breakpoints_pruned,bp_cell],axis=0,ignore_index=True)
+
+    #Save the pruned breakpoints
+    breakpoints_pruned.to_csv(outdir+"/breakpoints_pruned.csv")
+
+    end = time.perf_counter()
+    execution_time = (end - start)/60
+    print(f"Successfully discarded irrelevant breakpoints. Execution time: {execution_time:.2f} mins")
+
+    print("Assign somies")
+
+    start = time.perf_counter()
 
     #Number of bins per chromosome
     num_bins_chrom = counts.var["seq"].value_counts(sort=False)
 
     #Convert breakpoints into segment annotations per cell
     clusters_pruned={}
-    for cell, bp_frame in breakpoints_pruned.items():
-        
-        print(cell)
+    for cell in breakpoints_pruned["cell"].unique():
         
         counter=1
         cluster_list=[]
         
         for chrom in unique_chroms:
-            
+
             #Extract all breakpoints from this chromosome
-            bp_chrom = bp_frame.breakpoint[bp_frame.seq==chrom]
+            bp_chrom = breakpoints_pruned.breakpoint[(breakpoints_pruned.chr==chrom) & 
+                                                     (breakpoints_pruned.cell==cell) ]
             
             #If no breakpoints exist for this chromsome, save all windows as one segment
             if bp_chrom.empty:
@@ -128,8 +180,13 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
     for cell, cluster_cell in clusters_pruned.items():
         somies_ad[cell]=list(assign_gainloss(counts.X[counts.obs.cellID == cell,].toarray().flatten(),cluster_cell))
 
+    end = time.perf_counter()
+    execution_time = (end - start)/60
+    print(f"Successfully identified somies. Execution time: {execution_time:.2f} mins")
+
+
     #Save the results as a tsv file
-    somies_ad.to_csv("test.csv")
+    somies_ad.to_csv(outdir+"/result_table.csv")
 
     print("""A .tsv file with the results has been written to disk. 
           It contains the copy number states for each cell per bin. 
@@ -140,5 +197,11 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
     # ----------------------------------------------------------------------- 
 
     if(plotKaryo):
-        plot_karyo_gainloss(somies_ad)
-        print("Successfully plotted karyogram")
+
+        start = time.perf_counter()
+
+        karyo_gainloss(somies_ad,outdir,title_karyo)
+
+        end = time.perf_counter()
+        execution_time = (end - start)/60
+        print(f"Successfully plotted karyogram. Execution time: {execution_time:.2f} mins")
