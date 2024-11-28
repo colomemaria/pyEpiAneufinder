@@ -154,7 +154,7 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
         for chrom in unique_chroms:
 
             #Extract all breakpoints from this chromosome
-            bp_chrom = breakpoints_pruned.breakpoint[(breakpoints_pruned.chr==chrom) & 
+            bp_chrom = breakpoints_pruned.breakpoint[(breakpoints_pruned.seq==chrom) & 
                                                      (breakpoints_pruned.cell==cell) ]
             
             #If no breakpoints exist for this chromsome, save all windows as one segment

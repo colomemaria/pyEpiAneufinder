@@ -42,12 +42,12 @@ def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
                 #bp_position = (np.argmax(dist_vector)*minsize)+total_position
                 bp_pos_shifted = ((np.argmax(dist_vector)+1)*minsize)-1
                 
-                #Because of the minsize the shift might sometimes be outside the segement length 
+                #Because of the minsize the shift might sometimes be outside the segment length 
                 #(set it to the length in the this case)
                 if bp_pos_shifted >= len(segement):
                     bp_pos_shifted = len(segement) - 1
                 
-                #Check whether it is overlapping any other segement (works only if bp is not empty)
+                #Check whether it is overlapping any other segment (works only if bp is not empty)
                 if bp:
                     bp_neighbors = np.concatenate([np.arange(x - minsizeCNV, x + minsizeCNV + 1) for x in bp])
                     if not ((bp_pos_shifted+total_position) in  bp_neighbors):

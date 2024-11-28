@@ -1,13 +1,13 @@
 import numpy as np
 
-def dist_ad(x,y):
+def dist_ad(x, y):
     """
     Function to calculate the AD statistic between two distributions
 
     Parameters
     ----------
     x: Numeric list with reads counts left of the breakpoint
-    y: Numeric list Vector with reads counts right of the breakpoint
+    y: Numeric list with reads counts right of the breakpoint
 
     Output
     ------
@@ -20,31 +20,29 @@ def dist_ad(x,y):
     m = len(y)
     poolsize = n + m
 
-    # Pool of distinct values
-    poolvec = np.concatenate([x, y])
-    pooldistinct = np.unique(np.sort(poolvec))
+    # Distinct values and their counts
+    pooldistinct, counts = np.unique(np.concatenate([x, y]), return_counts=True)
 
-    # Initialize sums
-    sum_x = 0
-    sum_y = 0
+    # Remove the last element (don't iterate over this one)
+    pooldistinct = pooldistinct[:-1]
+    counts = counts[:-1]
+    
+    # Calculate cumulative sums (CDFs) for x, y, and pooled
+    cdf_x = np.searchsorted(np.sort(x), pooldistinct, side='right')
+    cdf_y = np.searchsorted(np.sort(y), pooldistinct, side='right')
+    bj = cdf_x + cdf_y
 
-    # Iterate over distinct values in the pool
-    for j in range(len(pooldistinct) - 1):
-        lj = np.sum(x == pooldistinct[j]) + np.sum(y == pooldistinct[j])
-        mxj = np.sum(x <= pooldistinct[j])
-        myj = np.sum(y <= pooldistinct[j])
-        bj = np.sum(x <= pooldistinct[j]) + np.sum(y <= pooldistinct[j])
+    num_x = counts * ((poolsize * cdf_x - n * bj) ** 2)
+    num_y = counts * ((poolsize * cdf_y - m * bj) ** 2)
+    denom = poolsize * bj * (poolsize - bj)
 
-        denom = poolsize * (bj * (poolsize - bj))
-        num_x = lj * ((poolsize * mxj - n * bj) ** 2)
-        num_y = lj * ((poolsize * myj - m * bj) ** 2)
-
-        sum_x += num_x / denom
-        sum_y += num_y / denom
+    sum_x = np.sum(num_x / denom)
+    sum_y = np.sum(num_y / denom)
 
     # Final statistic
     stat_ad = (sum_x / n) + (sum_y / m)
-    return(stat_ad)
+    return stat_ad
+
 
 
 def seq_dist_ad(seq_data,minsize=1):
@@ -64,7 +62,7 @@ def seq_dist_ad(seq_data,minsize=1):
     
     #Create the list of breakpoints to test (with a stepsize of minsize)
     bp1 = np.arange(0, len(seq_data), minsize)
-    
+
     # Loop over break points
     distlist = []
     for i1 in range(len(bp1)):
