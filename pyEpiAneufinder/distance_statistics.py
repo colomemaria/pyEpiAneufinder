@@ -64,14 +64,14 @@ def seq_dist_ad(seq_data,minsize=1):
     bp1 = np.arange(0, len(seq_data), minsize)
 
     # Loop over break points
-    distlist = []
-    for i1 in range(len(bp1)):
+    n_bps=len(bp1)
+    distlist = np.empty(n_bps)
+    for i in range(n_bps):
         
-        # Call dist_ad function
-        dist_value = dist_ad(seq_data[:(bp1[i1]+1)], seq_data[bp1[i1]:])
-        distlist.append(dist_value)  # Append the result to distlist
+        # Call dist_ad function (the middle element is taken twice to match the R code)
+        distlist[i] = dist_ad(seq_data[:(bp1[i]+1)], seq_data[bp1[i]:])
     
     # Replace NaN values with 0 in distlist
-    distlist = [np.nan_to_num(d) for d in distlist]
+    distlist = np.nan_to_num(distlist)
     
-    return distlist
+    return list(distlist)
