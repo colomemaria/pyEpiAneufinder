@@ -56,7 +56,7 @@ def assign_gainloss(seq_data,cluster,uq=0.9,lq=0.1):
     cnmean = grouped_data.apply(lambda x: compute_cluster_mean(x, lq, uq, qus_global))
     
     # Identify clusters/segments with Z scores between -1 and 1
-    cnmean_scaled = (cnmean - np.mean(cnmean)) / np.std(cnmean)
+    cnmean_scaled = (cnmean - np.mean(cnmean)) / np.std(cnmean,ddof=1)
     cnmean_significance = (cnmean_scaled >= -1) & (cnmean_scaled <= 1)
     
     #Set these values to the mean (will become CNV status 1)
