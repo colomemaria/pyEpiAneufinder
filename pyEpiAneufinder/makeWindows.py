@@ -1,16 +1,25 @@
 from Bio import SeqIO
 from Bio.SeqUtils import nt_search
 import pandas as pd
+import gzip
 
 def read_bed_file(bed_file): # Read the BED file into a DataFrame
     bed_df = pd.read_csv(bed_file, sep='\t', header=None, names=['chromosome', 'start', 'end'],index_col=False)
     return bed_df
 
+def open_fasta(filename):
+    if filename.endswith(".gz"):
+        return gzip.open(filename, "rt")
+    else:
+        return open(filename, "r")
 
 def make_windows(genome_file, bed_file, window_size, exclude=None):
     # Load the genome from a FASTA file
     print("Loading genome file")
-    genome = SeqIO.to_dict(SeqIO.parse(genome_file, "fasta"))
+
+    with open_fasta(genome_file) as handle:
+        genome = SeqIO.to_dict(SeqIO.parse(handle, "fasta"))
+
     print("Genome file loaded")
 
     # Read the blacklist BED file
