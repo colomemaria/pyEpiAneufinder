@@ -7,7 +7,7 @@ import time
 from typing import Dict, Generator, List, Tuple
 import concurrent
 import numpy as np
-import fargv
+#import fargv
 import gzip
 from matplotlib import pyplot as plt
 from skmisc.loess import loess
@@ -167,30 +167,21 @@ def get_loess_smoothed(counts_per_window: np.ndarray, gc: np.ndarray) -> Tuple[n
 def gaussian_convolve_1d(signal, sigma, filter_size):
     return gaussian_filter1d(signal, sigma=sigma, mode='reflect', truncate=(filter_size / (2 * sigma)))
 
-def main():
-    p = {
-        "windows_csv": "./data/windows_vectorized.csv",
-        "fragments": "./data/GSM3722064_SU008_Tumor_Pre_fragments_preprocessed.tsv",
-        "fragments_chunk_size": 100000,
-        "plot_each_window": False,
-        "pickle_counts_path": "",
-        "unvectorize": False,
-        "gpu_device": ["cpu", "If you set this to 'cuda' the computation is performed with pytorch. On systems with a small gpu\
-            run with the evironmenta variable PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"],
-    }
+def process_fragments(windows_csv,fragments,fragments_chunk_size, unvectorize, 
+                      gpu_device, plot_each_window,pickle_counts_path):
+
     t = time.time()
-    args, _ = fargv.fargv(p)
-    chr_to_windows = load_windows_dict(args.windows_csv)
-    fragment_loader = load_fragments_by_cell_and_chr(args.fragments, lines_chunk=args.fragments_chunk_size)
+    chr_to_windows = load_windows_dict(windows_csv)
+    fragment_loader = load_fragments_by_cell_and_chr(fragments, lines_chunk=fragments_chunk_size)
     cell_chromosome_normalised = {}
-    if args.unvectorize and args.gpu_device == "cpu":
+    if unvectorize and gpu_device == "cpu":
         count_renderer = render_counts_per_window(fragment_loader, chr_to_windows)
-    elif args.gpu_device != "cpu" and not args.unvectorize:
+    elif gpu_device != "cpu" and not unvectorize:
         count_renderer = render_counts_per_window_gpu(fragment_loader, chr_to_windows)
-    elif (args.gpu_device == "cpu") and (not args.unvectorize):
+    elif (gpu_device == "cpu") and (not unvectorize):
         count_renderer = render_counts_per_window_vectorized(fragment_loader, chr_to_windows)
     else:
-        raise ValueError("invalid combination args.gpu_device and args.unvectorized")
+        raise ValueError("invalid combination gpu_device and unvectorized")
     
     for n, ((cell, chromosome), counts_per_window, gc, at) in enumerate(count_renderer):
         print(f"{time.time() - t:.3} {n}: {cell}\t{chromosome}: {counts_per_window.sum()}\t{gc.mean()}\t{at.mean()}", file=sys.stderr)
@@ -199,7 +190,7 @@ def main():
         loess = get_loess_smoothed(counts_per_window, gc)
         correction = counts_per_window.mean()/(loess + .000000000001)
         loess_norm_counts = counts_per_window * correction
-        if args.plot_each_window:
+        if plot_each_window:
             fig = plt.figure()
             ax1 = fig.add_subplot(221)
             ax2 = fig.add_subplot(222)
@@ -218,8 +209,20 @@ def main():
             plt.suptitle(f"{chromosome} {cell} Counts:{counts_per_window.sum()} GCrange:[{gc.min()}-{gc.max()}], GCmean:{gc.mean()}")
             plt.show()
     cell_chromosome_normalised[cell, chromosome] = [counts_per_window, loess, loess_norm_counts]
-    if args.pickle_counts_path != "":
-        pickle.dump(cell_chromosome_normalised, open(args.pickle_counts_path, "wb"))
+
+    if pickle_counts_path != "":
+        pickle.dump(cell_chromosome_normalised, open(pickle_counts_path, "wb"))
 
 if __name__ == "__main__":
-    main()
+
+    windows_csv = "/work/project/ladcol_010/pyEpiAneufinder/test_run/hg38_w100000.csv"
+    fragments = "/work/project/ladcol_010/epiAneufinder_improvements/epiAneufinder_test/sample_data/sample.tsv"
+    #fragments = "/work/project/ladcol_010/epiAneufinder_improvements/input/SNU601/fragments.tsv.gz"
+    fragments_chunk_size = 100000
+    plot_each_window = False
+    unvectorize =  True
+    gpu_device = "cpu"
+    pickle_counts_path = "/work/project/ladcol_010/pyEpiAneufinder/test_run/normalized_counts.csv"
+    
+    process_fragments(windows_csv,fragments,fragments_chunk_size, unvectorize, 
+                      gpu_device, plot_each_window,pickle_counts_path)
