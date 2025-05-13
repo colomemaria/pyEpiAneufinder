@@ -78,10 +78,13 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
     return windows_df
 
 if __name__ =="__main__":
-    blacklist_file="/home/katia/Helmholz/epiAneufinder/revisions/hg19.blacklist.v2.bed"
-    genome_file="/home/katia/Helmholz/epiAneufinderPython/hg19/hg19.fa"
-    #genome_file = "test.fasta"
+    blacklist_file="/work/project/ladcol_010/annotations/hg38-blacklist.v2.bed"
+    genome_file="/work/project/ladcol_010/annotations/hg38.fa.gz"
+    windows_file_name="/work/project/ladcol_010/pyEpiAneufinder/test_run/hg38_w100000.csv"
+
+    #blacklist_file="/home/katia/Helmholz/epiAneufinder/revisions/hg19.blacklist.v2.bed"
+    #genome_file="/home/katia/Helmholz/epiAneufinderPython/hg19/hg19.fa"
     window_size=100000
     exclude=["chrY","chrX"]
     windows=make_windows(genome_file, blacklist_file, window_size, exclude)
-    windows.to_csv("hg19_windows.csv")
+    windows.to_csv(windows_file_name)
