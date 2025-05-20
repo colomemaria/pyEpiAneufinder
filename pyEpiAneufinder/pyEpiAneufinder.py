@@ -160,7 +160,7 @@ def epiAneufinder(input, outdir, genome_file,
             cluster_ad = pd.concat([cluster_ad,bp_chrom],axis=0,ignore_index=True)
 
     #Save the found breakpoints
-    cluster_ad.to_csv(outdir+"/breakpoints_unfiltered.csv")
+    #cluster_ad.to_csv(outdir+"/breakpoints_unfiltered.csv")
 
     end = time.perf_counter()
     execution_time = (end - start)/60
@@ -184,7 +184,7 @@ def epiAneufinder(input, outdir, genome_file,
         breakpoints_pruned = pd.concat([breakpoints_pruned,bp_cell],axis=0,ignore_index=True)
 
     #Save the pruned breakpoints
-    breakpoints_pruned.to_csv(outdir+"/breakpoints_pruned.csv")
+    #breakpoints_pruned.to_csv(outdir+"/breakpoints_pruned.csv")
 
     end = time.perf_counter()
     execution_time = (end - start)/60
