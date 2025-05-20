@@ -2,9 +2,12 @@ from Bio import SeqIO
 from Bio.SeqUtils import nt_search
 import pandas as pd
 import gzip
+import natsort
 
-def read_bed_file(bed_file): # Read the BED file into a DataFrame
-    bed_df = pd.read_csv(bed_file, sep='\t', header=None, names=['chromosome', 'start', 'end'],index_col=False)
+def read_bed_file(bed_file): # Read the BED file into a DataFrame (only the first three are required)
+    bed_df = pd.read_csv(bed_file, sep='\t', header=None, 
+                         usecols=[0, 1, 2], 
+                         names=['chromosome', 'start', 'end'],index_col=False)
     return bed_df
 
 def open_fasta(filename):
@@ -36,8 +39,12 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
         if exclude and chr_name in exclude:
             continue
 
+        #Remove non-standard chromosomes
+        if "_" in chr_name:
+            continue
+
         # Calculate the number of windows and window start positions
-        print("Calculating number of windows for "+ chr_name)
+        #print("Calculating number of windows for "+ chr_name)
         seq_length = len(chr_seq)
         num_windows = seq_length // window_size
         window_starts = [i * window_size for i in range(num_windows)]
@@ -83,17 +90,8 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
     # Convert the list of dictionaries to a Pandas DataFrame
     windows_df = pd.DataFrame(windows)
 
+    #Sort it using the natual sort so that chr2 before chr11
+    windows_df.sort_values(by=["chromosome","start"],key=natsort.natsort_keygen(),inplace=True)
+
     # Return the DataFrame
     return windows_df
-
-if __name__ =="__main__":
-    blacklist_file="/work/project/ladcol_010/annotations/hg38-blacklist.v2.bed"
-    genome_file="/work/project/ladcol_010/annotations/hg38.fa.gz"
-    windows_file_name="/work/project/ladcol_010/pyEpiAneufinder/test_run/hg38_w100000.csv"
-
-    #blacklist_file="/home/katia/Helmholz/epiAneufinder/revisions/hg19.blacklist.v2.bed"
-    #genome_file="/home/katia/Helmholz/epiAneufinderPython/hg19/hg19.fa"
-    window_size=100000
-    exclude=["chrY","chrX"]
-    windows=make_windows(genome_file, blacklist_file, window_size, exclude)
-    windows.to_csv(windows_file_name)

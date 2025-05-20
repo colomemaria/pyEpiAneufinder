@@ -1,18 +1,24 @@
 import pandas as pd
 import numpy as np
+import anndata as ad
+from scipy.sparse import csr_matrix
 import time 
+import os
 
+from .makeWindows import make_windows
+from .render_fragments import process_fragments, get_loess_smoothed
 from .get_breakpoints import getbp
 from .assign_somy import threshold_dist_values, assign_gainloss
 from .plotting import karyo_gainloss
 
-def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapiens.UCSC.hg38",
-                    test='AD', reuse_existing=False, exclude=None,
-                    uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000, mapqFilter=10,
-                    threshold_cells_nbins=0.05,selected_cells=None,
-                    gc_correction="loess",threshold_blacklist_bins=0.85,
-                    ncores=4, minsize=1, k=4, 
-                    minsizeCNV=0,plotKaryo=True):
+def epiAneufinder(input, outdir, genome_file,
+                  blacklist, windowSize,
+                  test='AD', reuse_existing=False, exclude=None,
+                  uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000,
+                  threshold_cells_nbins=0.05,selected_cells=None,
+                  threshold_blacklist_bins=0.85,
+                  ncores=4, minsize=1, k=4, 
+                  minsizeCNV=0,plotKaryo=True):
 
     """
     Main function of epiAneufinder
@@ -37,7 +43,6 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
     mapqFilter: Filter bam files after a certain mapq value
     threshold_cells_nbins: Keep only cells that have more than a certain percentage of non-zero bins
     selected_cells: Additional option for filtering the input, either NULL or a file with barcodes of cells to keep (one barcode per line, no header)
-    gc_correction: Type of GC correction, currently implemented options are "loess", "bulk_loess" and "quadratic".
     threshold_blacklist_bins: Blacklist a bin if more than the given ratio of cells have zero reads in the bin. Default: 0.85
     ncores: Number of cores for parallelization. Default: 4
     minsize: Integer. Resolution at the level of ins. Default: 1. Setting it to higher numbers runs the algorithm faster at the cost of resolution
@@ -51,36 +56,84 @@ def epiAneufinder(input, outdir, blacklist, windowSize, genome="BSgenome.Hsapien
     
     """
 
-    # Create the count matrix
+    #Create the output dir if it doesn't exist yet
+    os.makedirs(outdir, exist_ok=True)
 
+    # ----------------------------------------------------------------------- 
+    # Create windows from genome file (with GC content per window)
+    # ----------------------------------------------------------------------- 
+
+    print("Binning the genome")
+
+    start = time.perf_counter()
+
+    windows_file_name = outdir+"/binned_genome.csv"
+
+    windows = make_windows(genome_file, blacklist, windowSize, exclude)
+    windows.to_csv(windows_file_name)
+
+    end = time.perf_counter()
+    execution_time = (end - start)/60
+    print(f"Successfully binned the genome. Execution time: {execution_time:.2f} mins")
+
+    # ----------------------------------------------------------------------- 
+    # Read the fragment file and generate a count matrix from it
+    # ----------------------------------------------------------------------- 
+
+    print("Reading fragment file")
+
+    start = time.perf_counter()
+
+    counts = process_fragments(windows_file_name,input,windowSize, minFrags)
+
+    end = time.perf_counter()
+    execution_time = (end - start)/60
+    print(f"Successfully read fragment file. Execution time: {execution_time:.2f} mins")
+
+    # -----------------------------------------------------------------------
     # Filtering cells
+    # -----------------------------------------------------------------------
 
+    #Exclude cells that have no signal in most bins
+    nonzero_cell = counts.X.getnnz(axis=1)
+    filter_cells = nonzero_cell > threshold_cells_nbins * counts.X.shape[1]
+    counts = counts[filter_cells,:].copy()
+    print(f"Filtering cells without enough coverage, {counts.X.shape[0]} cells remain.")
+
+    #Exclude bins that have no signal in most cells
+    nonzero_bins = counts.X.getnnz(axis=0)
+    filter_bins = nonzero_bins >= (1- threshold_blacklist_bins) * counts.X.shape[0]
+    counts = counts[:,filter_bins].copy()
+    print(f"Filtering windows without enough coverage, {counts.X.shape[1]} windows remain.")
+
+    # ----------------------------------------------------------------------- 
     # GC correction
-
-    # ----------------------------------------------------------------------- 
-    # Debugging code to check the second part of the function
     # ----------------------------------------------------------------------- 
 
-    import scanpy as sc
-    from scipy.sparse import csr_matrix
+    print("GC correction")
 
-    #Read GC corrected counts and annotations (from R version of epiAneufinder)
-    annot=pd.read_csv(input+"/sample_pea_annot.csv",sep=" ")
+    start = time.perf_counter()
 
-    gc_counts=pd.read_csv("/Users/kschmid/Desktop/sample_pea_count.csv",sep=" ")
-    gc_counts = gc_counts.T
-    gc_counts.columns = ["win"+str(v) for v in list(gc_counts.columns.values)]
+    #Perform GC correction per cell
+    all_loess_rows = []
+    for i in range(counts.X.shape[0]):
+        counts_per_window=counts.X[i,:].toarray().flatten()
+        loess_res = get_loess_smoothed(counts_per_window, counts.var.GC.to_numpy())
+        correction = counts_per_window.mean()/loess_res #(loess_res + .000000000001)
+        loess_norm_row = counts_per_window * correction
+        #Round to integer again (speeds runtime significantly!)
+        all_loess_rows.append(np.rint(loess_norm_row).astype(int))
 
-    counts = sc.AnnData(gc_counts)
 
-    #Add window annotation
-    counts.var["seq"]=list(annot["seqnames"])
-    counts.var["start"]=list(annot["start"])
-    counts.var["end"]=list(annot["end"])
-    counts.obs["cellID"] = counts.obs.index.to_list()
+    #Keep the raw data
+    counts.layers["raw"]=counts.X
 
-    #Convert matrix into a sparse matrix
-    counts.X = csr_matrix(counts.X)
+    #Save the GC normalized matrix in X
+    counts.X = csr_matrix(np.vstack(all_loess_rows))
+
+    end = time.perf_counter()
+    execution_time = (end - start)/60
+    print(f"Successfully performed GC correction. Execution time: {execution_time:.2f} mins")
 
     # ----------------------------------------------------------------------- 
     # Estimating break points

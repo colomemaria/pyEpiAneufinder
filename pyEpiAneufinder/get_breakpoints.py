@@ -78,4 +78,5 @@ def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
                 bp_filtered.append(bp[i])
                 dist_bp_filtered.append(dist_bp[i])
  
-    return(pd.DataFrame({"breakpoint":bp_filtered,"ad_dist":dist_bp_filtered}))
+    return(pd.DataFrame({"breakpoint": np.array(bp_filtered, dtype="int64"),
+                         "ad_dist": np.array(dist_bp_filtered, dtype="float64")}))
