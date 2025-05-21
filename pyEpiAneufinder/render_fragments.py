@@ -60,12 +60,14 @@ def load_fragments_by_cell(fragments_path: str, lines_chunk=100000, min_frags=20
                 current_processed_lines.append((line[0], int(line[1]), int(line[2])))
                 unprocessed_line_idx += 1
             else:
-                if(len(current_processed_lines)>min_frags):
+                if(len(current_processed_lines) >= min_frags):
                     yield current_cell_name, current_processed_lines
                 current_cell_name = line[3]
                 current_processed_lines = []
         unprocessed_lines = f.readlines(lines_chunk)
-    yield current_cell_name, current_processed_lines
+        
+    if(len(current_processed_lines) >= min_frags):
+        yield current_cell_name, current_processed_lines
 
 
 def load_fragments_by_cell_and_chr(fragments_path: str, lines_chunk=100000, min_frags=20000) -> Generator[Dict[Tuple[str, str], List[Tuple[int, int]]], None, None]:
