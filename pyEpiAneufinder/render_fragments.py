@@ -27,7 +27,7 @@ def load_windows_dict(windows_csv: str) -> Dict[str, List[Tuple[int, int, float,
     return by_chr
 
 
-def load_fragments_by_cell(fragments_path: str, lines_chunk=100000) -> Generator[Dict[str, List[Tuple[str, int, int]]], None, None]:
+def load_fragments_by_cell(fragments_path: str, lines_chunk=100000, min_frags=20000) -> Generator[Dict[str, List[Tuple[str, int, int]]], None, None]:
     """Loads a SORTED fragments file and yields fragments for each cell.
     
     The input file is sorted by cell name and then by chromosome as a numeric value (while is is stored as astring), start, and end position.
@@ -60,15 +60,16 @@ def load_fragments_by_cell(fragments_path: str, lines_chunk=100000) -> Generator
                 current_processed_lines.append((line[0], int(line[1]), int(line[2])))
                 unprocessed_line_idx += 1
             else:
-                yield current_cell_name, current_processed_lines
+                if(len(current_processed_lines)>min_frags):
+                    yield current_cell_name, current_processed_lines
                 current_cell_name = line[3]
                 current_processed_lines = []
         unprocessed_lines = f.readlines(lines_chunk)
     yield current_cell_name, current_processed_lines
 
 
-def load_fragments_by_cell_and_chr(fragments_path: str, lines_chunk=100000) -> Generator[Dict[Tuple[str, str], List[Tuple[int, int]]], None, None]:
-    for cell_name, all_fragments in load_fragments_by_cell(fragments_path, lines_chunk):
+def load_fragments_by_cell_and_chr(fragments_path: str, lines_chunk=100000, min_frags=20000) -> Generator[Dict[Tuple[str, str], List[Tuple[int, int]]], None, None]:
+    for cell_name, all_fragments in load_fragments_by_cell(fragments_path, lines_chunk, min_frags):
         uprocessed_chr_lines = all_fragments
         current_chr_name = uprocessed_chr_lines[0][0]
         current_processed_lines = []
@@ -162,7 +163,7 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
     start_pos_dict = start_df["start_pos"].to_dict()
     end_pos_dict = start_df["end_pos"].to_dict()
     
-    fragment_loader = load_fragments_by_cell_and_chr(fragments, lines_chunk=fragments_chunk_size)
+    fragment_loader = load_fragments_by_cell_and_chr(fragments, lines_chunk=fragments_chunk_size, min_frags=minFrags)
     count_renderer =render_counts_per_window_vectorized(fragment_loader, chr_to_windows)
 
     #Convert it to a count matrix and filter already cells with too little counts
@@ -182,9 +183,9 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
             start_idx = start_pos_dict[chromosome]
             end_idx = end_pos_dict[chromosome]
             counts_cell[start_idx:end_idx] = counts_per_window
-        if counts_cell.sum() > minFrags:
-            matrix_rows.append(counts_cell.copy())
-            cell_ids.append(cell)
+        
+        matrix_rows.append(counts_cell.copy())
+        cell_ids.append(cell)
 
         current_time=time.perf_counter()-start
         print(f"{cell} - total time {current_time:.1f} s")
