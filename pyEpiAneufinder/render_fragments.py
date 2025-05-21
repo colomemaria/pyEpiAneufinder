@@ -12,6 +12,9 @@ import natsort
 import anndata as ad
 from scipy.sparse import csr_matrix
 
+#only for debuggin purpose
+import time
+
 def load_windows_dict(windows_csv: str) -> Dict[str, List[Tuple[int, int, float, float, float]]]:
     with open(windows_csv) as f:
         lines = [line.split(",")[1:] for line in f.read().strip().split("\n")[1:]]
@@ -162,33 +165,44 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
 
     #Convert it to a count matrix and filter already cells with too little counts
     current_cell = None
-    counts_all_cells = {}
+    matrix_rows = []
+    cell_ids = []
 
     total_length = sum(start_df["length"])
     counts_cell = np.zeros(total_length, dtype=int)
+
+    #DEBUG:
+    start = time.perf_counter()
 
     for (cell, chromosome), counts_per_window in count_renderer:
         
         #print(cell+" "+chromosome)
         
         if cell != current_cell:
-            if sum(counts_cell) > minFrags:
-                counts_all_cells[current_cell] = counts_cell
-            counts_cell = np.zeros(total_length, dtype=int)
+            if counts_cell.sum() > minFrags:
+                matrix_rows.append(counts_cell.copy())
+                cell_ids.append(current_cell)
+            counts_cell.fill(0)
             current_cell = cell
+            current_time=time.perf_counter()-start
+            print(f"{current_cell} - total time {current_time:.1f} s")
             
         counts_cell[start_pos_dict[chromosome]:end_pos_dict[chromosome]] = counts_per_window
     
     #Save the last cells counts
-    if sum(counts_cell) > minFrags:
-        counts_all_cells[current_cell] = counts_cell
+    if counts_cell.sum() > minFrags:
+        matrix_rows.append(counts_cell.copy())
+        cell_ids.append(current_cell)
 
+    current_time=time.perf_counter()-start
+    print(f"start constructing the matrix - total time {current_time:.1f} s")    
     # Stack the 1D sparse arrays into a 2D sparse matrix
-    matrix_2d = np.vstack(list(counts_all_cells.values()))
+    matrix_2d = np.vstack(matrix_rows)
 
+    print(f"start creating the anndata object - total time {current_time:.1f} s")  
     # Create an AnnData object
     counts = ad.AnnData(csr_matrix(matrix_2d))
-    counts.obs["cellID"] = counts_all_cells.keys()
+    counts.obs["cellID"] = cell_ids
 
     #Create one pandas data frame for the windows
     all_windows = pd.DataFrame()
