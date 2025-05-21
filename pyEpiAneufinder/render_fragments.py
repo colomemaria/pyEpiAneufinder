@@ -12,6 +12,8 @@ import natsort
 import anndata as ad
 from scipy.sparse import csr_matrix
 
+from itertools import groupby
+
 #only for debuggin purpose
 import time
 
@@ -174,25 +176,18 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
     #DEBUG:
     start = time.perf_counter()
 
-    for (cell, chromosome), counts_per_window in count_renderer:
-        
-        #print(cell+" "+chromosome)
-        
-        if cell != current_cell:
-            if counts_cell.sum() > minFrags:
-                matrix_rows.append(counts_cell.copy())
-                cell_ids.append(current_cell)
-            counts_cell.fill(0)
-            current_cell = cell
-            current_time=time.perf_counter()-start
-            print(f"{current_cell} - total time {current_time:.1f} s")
-            
-        counts_cell[start_pos_dict[chromosome]:end_pos_dict[chromosome]] = counts_per_window
-    
-    #Save the last cells counts
-    if counts_cell.sum() > minFrags:
-        matrix_rows.append(counts_cell.copy())
-        cell_ids.append(current_cell)
+    for (cell, group) in groupby(count_renderer, key=lambda x: x[0][0]):
+        counts_cell.fill(0)
+        for (_, chromosome), counts_per_window in group:
+            start_idx = start_pos_dict[chromosome]
+            end_idx = end_pos_dict[chromosome]
+            counts_cell[start_idx:end_idx] = counts_per_window
+        if counts_cell.sum() > minFrags:
+            matrix_rows.append(counts_cell.copy())
+            cell_ids.append(cell)
+
+        current_time=time.perf_counter()-start
+        print(f"{cell} - total time {current_time:.1f} s")
 
     current_time=time.perf_counter()-start
     print(f"start constructing the matrix - total time {current_time:.1f} s")    
