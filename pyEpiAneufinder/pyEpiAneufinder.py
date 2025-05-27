@@ -148,7 +148,7 @@ def epiAneufinder(input, outdir, genome_file,
 
     cluster_ad = pd.DataFrame()
     for i in range(counts.shape[0]):
-        cell_name = counts.obs.cellID[i]
+        cell_name = counts.obs.cellID.iloc[i]
         for chrom in unique_chroms:
             #Identify the breakpoints
             bp_chrom=getbp(counts.X[i,counts.var["seq"]==chrom].toarray().flatten(),
@@ -228,10 +228,15 @@ def epiAneufinder(input, outdir, genome_file,
         #Save all indices as a new dictonary entry
         clusters_pruned[cell]=cluster_list
 
-    #Assign the somies for each cell
-    somies_ad=counts.var[["seq","start","end"]]
-    for cell, cluster_cell in clusters_pruned.items():
-        somies_ad[cell]=list(assign_gainloss(counts.X[counts.obs.cellID == cell,].toarray().flatten(),cluster_cell))
+    # Assign somies for each cell
+    results = {
+        cell: list(assign_gainloss(
+            counts.X[counts.obs.cellID == cell].toarray().flatten(),
+            cluster_cell))
+        for cell, cluster_cell in clusters_pruned.items() }
+
+    # Add region information
+    somies_ad = pd.concat([counts.var[["seq", "start", "end"]].copy(), pd.DataFrame(results)], axis=1)
 
     end = time.perf_counter()
     execution_time = (end - start)/60
@@ -253,7 +258,7 @@ def epiAneufinder(input, outdir, genome_file,
 
         start = time.perf_counter()
 
-        karyo_gainloss(somies_ad,outdir,title_karyo)
+        karyo_gainloss(somies_ad,outdir+"/",title_karyo)
 
         end = time.perf_counter()
         execution_time = (end - start)/60

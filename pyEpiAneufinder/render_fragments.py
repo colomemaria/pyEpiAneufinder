@@ -14,9 +14,6 @@ from scipy.sparse import csr_matrix
 
 from itertools import groupby
 
-#only for debuggin purpose
-import time
-
 def load_windows_dict(windows_csv: str) -> Dict[str, List[Tuple[int, int, float, float, float]]]:
     with open(windows_csv) as f:
         lines = [line.split(",")[1:] for line in f.read().strip().split("\n")[1:]]
@@ -169,15 +166,11 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
     count_renderer =render_counts_per_window_vectorized(fragment_loader, chr_to_windows)
 
     #Convert it to a count matrix and filter already cells with too little counts
-    current_cell = None
     matrix_rows = []
     cell_ids = []
 
     total_length = sum(start_df["length"])
     counts_cell = np.zeros(total_length, dtype=int)
-
-    #DEBUG:
-    start = time.perf_counter()
 
     for (cell, group) in groupby(count_renderer, key=lambda x: x[0][0]):
         counts_cell.fill(0)
@@ -188,26 +181,19 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
         
         matrix_rows.append(counts_cell.copy())
         cell_ids.append(cell)
-
-        current_time=time.perf_counter()-start
-        print(f"{cell} - total time {current_time:.1f} s")
-
-    current_time=time.perf_counter()-start
-    print(f"start constructing the matrix - total time {current_time:.1f} s")    
+    
     # Stack the 1D sparse arrays into a 2D sparse matrix
     matrix_2d = np.vstack(matrix_rows)
-
-    print(f"start creating the anndata object - total time {current_time:.1f} s")  
+  
     # Create an AnnData object
     counts = ad.AnnData(csr_matrix(matrix_2d))
     counts.obs["cellID"] = cell_ids
 
     #Create one pandas data frame for the windows
-    all_windows = pd.DataFrame()
-    for chrom in chr_to_windows.keys():
-        tmp = pd.DataFrame(chr_to_windows[chrom], columns = ["start","end","GC","AT","N"])
-        tmp["chromosome"] = chrom
-        all_windows = pd.concat([all_windows,tmp],ignore_index=True)
+    all_windows = pd.DataFrame([
+        {"start": start, "end": end, "GC": GC, "AT": AT, "N": N, "chromosome": chrom}
+        for chrom, windows in chr_to_windows.items()
+        for start, end, GC, AT, N in windows])
 
     #Set metadata of Anndata frame
     counts.var["seq"]=list(all_windows["chromosome"])
