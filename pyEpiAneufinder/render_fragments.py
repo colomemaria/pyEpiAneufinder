@@ -145,11 +145,8 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
 
 
     #Get the start and length for each chromosome
-    start_tmp=[]
-    for chrom in chr_to_windows:
-        start_tmp.append({"chromosome":chrom,"length":len(chr_to_windows[chrom])})
-        
-    start_df = pd.DataFrame(start_tmp)
+    start_df = pd.DataFrame({"chromosome":chrom,"length":len(windows)}
+                            for chrom, windows in chr_to_windows.items())
 
     #Sort alphanumerical using natsort
     start_df.sort_values(by='chromosome', key=natsort.natsort_keygen(), inplace=True)
@@ -163,7 +160,7 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
     end_pos_dict = start_df["end_pos"].to_dict()
     
     fragment_loader = load_fragments_by_cell_and_chr(fragments, lines_chunk=fragments_chunk_size, min_frags=minFrags)
-    count_renderer =render_counts_per_window_vectorized(fragment_loader, chr_to_windows)
+    count_renderer = render_counts_per_window_vectorized(fragment_loader, chr_to_windows)
 
     #Convert it to a count matrix and filter already cells with too little counts
     matrix_rows = []
@@ -173,6 +170,7 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
     counts_cell = np.zeros(total_length, dtype=int)
 
     for (cell, group) in groupby(count_renderer, key=lambda x: x[0][0]):
+
         counts_cell.fill(0)
         for (_, chromosome), counts_per_window in group:
             start_idx = start_pos_dict[chromosome]
@@ -181,6 +179,10 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
         
         matrix_rows.append(counts_cell.copy())
         cell_ids.append(cell)
+    
+    # Check that cells were found above the minFrags threshold
+    if len(cell_ids) == 0:
+        raise ValueError("No cells found! Consider reducing the parameter minFrags.")
     
     # Stack the 1D sparse arrays into a 2D sparse matrix
     matrix_2d = np.vstack(matrix_rows)

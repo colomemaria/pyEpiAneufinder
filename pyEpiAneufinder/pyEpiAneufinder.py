@@ -11,7 +11,7 @@ from .get_breakpoints import getbp
 from .assign_somy import threshold_dist_values, assign_gainloss
 from .plotting import karyo_gainloss
 
-def epiAneufinder(input, outdir, genome_file,
+def epiAneufinder(fragment_file, outdir, genome_file,
                   blacklist, windowSize,
                   test='AD', reuse_existing=False, exclude=None,
                   uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000,
@@ -28,7 +28,7 @@ def epiAneufinder(input, outdir, genome_file,
 
     Parameters
     ----------
-    input: Folder with bam files, a fragments.tsv/bed file or a folder with a count matrix (required files: matrix.mtx(.gz), barcodes.tsv(.gz) and peaks.bed(.gz))
+    fragment_file: Folder with bam files, a fragments.tsv/bed file or a folder with a count matrix (required files: matrix.mtx(.gz), barcodes.tsv(.gz) and peaks.bed(.gz))
     outdir: Path to output directory
     blacklist: Bed file with blacklisted regions
     windowSize: Size of the window (Reccomended for sparse data - 1e6)
@@ -84,7 +84,7 @@ def epiAneufinder(input, outdir, genome_file,
 
     start = time.perf_counter()
 
-    counts = process_fragments(windows_file_name,input,windowSize, minFrags)
+    counts = process_fragments(windows_file_name,fragment_file,windowSize, minFrags)
 
     end = time.perf_counter()
     execution_time = (end - start)/60
@@ -235,8 +235,12 @@ def epiAneufinder(input, outdir, genome_file,
             cluster_cell))
         for cell, cluster_cell in clusters_pruned.items() }
 
+    #Need to reset the index before concatenating with results
+    annot = counts.var[["seq", "start", "end"]]
+    annot.reset_index(drop=True, inplace=True)
+
     # Add region information
-    somies_ad = pd.concat([counts.var[["seq", "start", "end"]].copy(), pd.DataFrame(results)], axis=1)
+    somies_ad = pd.concat([annot, pd.DataFrame(results)], axis=1)
 
     end = time.perf_counter()
     execution_time = (end - start)/60
