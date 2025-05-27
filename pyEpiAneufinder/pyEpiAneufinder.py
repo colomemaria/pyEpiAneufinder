@@ -135,6 +135,10 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     execution_time = (end - start)/60
     print(f"Successfully performed GC correction. Execution time: {execution_time:.2f} mins")
 
+    #Save the count matrix
+    matrix_file = outdir+"/count_matrix.h5ad"
+    counts.write(matrix_file, compression="gzip")
+    
     # ----------------------------------------------------------------------- 
     # Estimating break points
     # ----------------------------------------------------------------------- 
