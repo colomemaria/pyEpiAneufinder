@@ -4,6 +4,7 @@ import anndata as ad
 from scipy.sparse import csr_matrix
 import time 
 import os
+import subprocess
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed
@@ -77,14 +78,33 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     print(f"Successfully binned the genome. Execution time: {execution_time:.2f} mins")
 
     # ----------------------------------------------------------------------- 
-    # Read the fragment file and generate a count matrix from it
+    # Sort the fragment file by cell (run over shell)
     # ----------------------------------------------------------------------- 
 
-    print("Reading fragment file")
+    print("Sort the fragment file")
 
     start = time.perf_counter()
 
-    counts = process_fragments(windows_file_name,fragment_file,windowSize, minFrags)
+    output_file = outdir + "/fragment_file.sortedbycell.tsv.gz"
+
+    cmd = f"zgrep -v '^#' {fragment_file} | sort -k4,4 -k1,1 -k2,2n --parallel={ncores} | gzip > {output_file}"
+
+    subprocess.run(cmd, shell=True, check=True)
+
+    end = time.perf_counter()
+    execution_time = (end - start)/60
+    print(f"Successfully sort fragment file. Execution time: {execution_time:.2f} mins")
+
+
+    # ----------------------------------------------------------------------- 
+    # Read the fragment file and generate a count matrix from it
+    # ----------------------------------------------------------------------- 
+
+    print("Reading the sorted fragment file")
+
+    start = time.perf_counter()
+
+    counts = process_fragments(windows_file_name,output_file,windowSize, minFrags)
 
     end = time.perf_counter()
     execution_time = (end - start)/60
