@@ -56,7 +56,7 @@ def karyo_gainloss (res, outdir,title_karyo):
     res = res.iloc[:, [0,1,2]+leaf_order]
 
     # Iterate over each unique 'seq' and plot in the respective grid
-    for i, (seq, group) in enumerate(res.groupby('seq')):
+    for i, (seq, group) in enumerate(res.groupby('seq', observed=True)):
         ax = fig.add_subplot(gs[0, i+1])  # Add a subplot to the GridSpec
         data_filtered = group.drop(columns=["seq", "start", "end"])
         
