@@ -13,14 +13,26 @@ The R version (including more information) can be found here: https://github.com
 Potentially setup a new conda environment first (recommended). Then:
 
 ```
-pip install ...
+pip install git+https://github.com/colomemaria/pyEpiAneufinder
 ```
 
 ### Executing the program
 
+The whole program can be run by calling the main function, using a fragment file as input, defined in the parameter `fragment_file`. It
+saves all output files in `outdir`. 
+
+The `genome` needs to be  given as a fasta file. For example, the human genome hg38 can be downloaded from here:
+https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
+
+Additionally, a `blacklist` file for regions of low mappability is required, the `windowSize` of the algorithms and optional a list of chromosomes to `exclude`.
+Cells with too little fragments are removed based on the parameter `minFrags`.
+
 ```
 import pyEpiAneufinder as pea
-pea.epiAneufinder(input="sample.tsv", outdir="epiAneufinder_results", windowSize=1e5, title_karyo="Karyogram of sample data")
+pea.epiAneufinder(fragment_file="sample_data/sample.tsv", outdir="results_sample_data", 
+                  genome_file="hg38.fa.gz", blacklist="sample_data/hg38-blacklist.v2.bed",
+                  windowSize=100000, exclude = ["chrX","chrY"],
+                  minFrags=20000)
 ```
 
 ### Authors of the python re-implementation
@@ -28,6 +40,8 @@ pea.epiAneufinder(input="sample.tsv", outdir="epiAneufinder_results", windowSize
 Katharina Schmid (katharina.schmid@bmc.med.lmu.de)
 
 Aikaterini Symeonidi (asymeonidi@bmc.med.lmu.de and ksymeonidh@gmail.com)
+
+Angelos Nikolaou (anguelos.nicolaou@gmail.com)
 
 Maria Colomé-Tatché (maria.colome@helmholtz-muenchen.de)
 

@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pyEpiAneufinder"
+version = "0.1"
+description = "Python version of epiAneufinder for calling CNVs from scATACseq"
+requires-python = ">=3.10"
+license = "BSD-3-clause"
+
+authors = [
+  {name = "Katharina Schmid", email = "katharina.schmid@bmc.med.lmu.de"},
+  {name = "Aikaterini Symeonidi", email = "asymeonidi@bmc.med.lmu.de"},
+  {name = "Angelos Nikolaou", email = "anguelos.nicolaou@gmail.com"},
+  {name = "Maria Colomé-Tatché", email = "maria.colome@bmc.med.lmu.de"}
+]
+
+dependencies = [
+  "numpy",
+  "pandas",
+  "matplotlib",
+  "seaborn",
+  "scipy",
+  "anndata",
+  "natsort",
+  "biopython",
+  "scikit-misc"
+]
+
+[tool.setuptools]
+packages = ["pyEpiAneufinder"]
+
