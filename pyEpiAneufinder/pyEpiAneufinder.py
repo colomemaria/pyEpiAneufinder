@@ -175,7 +175,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         cell_name = counts.obs.cellID.iloc[i]
         for chrom in unique_chroms:
             #Identify the breakpoints
-            bp_chrom=getbp(counts.X[i,counts.var["seq"]==chrom].toarray().flatten(),
+            bp_chrom=getbp(counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten(),
                            k=k,minsize=minsize,minsizeCNV=minsizeCNV)
             bp_chrom["cell"]= cell_name
             bp_chrom["seq"]=chrom
@@ -255,7 +255,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # Assign somies for each cell
     results = {
         cell: list(assign_gainloss(
-            counts.X[counts.obs.cellID == cell].toarray().flatten(),
+            counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
             cluster_cell))
         for cell, cluster_cell in clusters_pruned.items() }
 

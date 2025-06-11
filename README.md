@@ -29,7 +29,7 @@ Cells with too little fragments are removed based on the parameter `minFrags`.
 
 ```
 import pyEpiAneufinder as pea
-pea.epiAneufinder(fragment_file="sample_data/sample.tsv", 
+pea.epiAneufinder(fragment_file="sample_data/sample.tsv.gz", 
                   outdir="results_sample_data", 
                   genome_file="hg38.fa.gz", 
                   blacklist="sample_data/hg38-blacklist.v2.bed",
