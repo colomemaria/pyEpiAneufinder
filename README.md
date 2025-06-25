@@ -56,7 +56,7 @@ Both metrics are implemented genome-wide and per chromosome:
 import pyEpiAneufinder as pea
 import pandas as pd
 
-res = pd.read_csv("results_sample_data/pea_output_sampledata/result_table.csv",index_col=0)
+res = pd.read_csv("results_sample_data/result_table.csv",index_col=0)
 
 #Get the scores across the complete dataset
 pea.compute_aneuploidy_across_sample(res)
