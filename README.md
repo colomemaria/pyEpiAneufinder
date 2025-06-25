@@ -38,6 +38,41 @@ pea.epiAneufinder(fragment_file="sample_data/sample.tsv.gz",
                   minFrags=20000)
 ```
 
+### Calculating karoygram metrics
+
+The resulting CNVs (i.e. the karyogram) can be characterised based on the aneuploidy and heterogeneity score. Given a CNV result matrix with 𝑁 cells and 𝑇 bins and each entry being the CNV status 𝑐𝑖,𝑗 for cell 𝑖 and bin 𝑗, the metrics are defined as:
+
+* **Aneuploidy**: the mean deviation from the baseline value b (default $b=1$), i.e. how many bins are gained or lost per cell
+
+\[
+H = \frac{1}{T * N} \sum_{n=1}^{N} \sum_{t=1}^{T} |c_{n,t} - b|
+\]
+
+* **Heterogeneity**: the mean heterogeneity for a bin across cells, i.e. how different is the CNV status across cells for the same bin. For this, across each bin, the frequenies for each CNV status f is estimated as $m_f$ and then ordered decreasing so that $m_{0,t} >= m_{1,t}  >= m_{2,t}$
+
+\[
+H = \frac{1}{T * N} \sum_{t=1}^{T} \sum_{f=0}^{S} f * m_{f,t}
+\]
+
+Both metrics are implemented genome-wide and per chromosome:
+
+```
+import pyEpiAneufinder as pea
+import pandas as pd
+
+res = pd.read_csv("results_sample_data/pea_output_sampledata/result_table.csv",index_col=0)
+
+#Get the scores across the complete dataset
+pea.compute_aneuploidy_across_sample(res)
+#Result for test data: 0.07119973598700244
+pea.compute_heterogeneity_across_sample(res)
+#Result for test data: 0.07377132412672624
+
+#Get the scores per chromosome
+pea.compute_aneuploidy_by_chr(res)
+pea.compute_heterogeneity_by_chr(res)
+```
+
 ### Authors of the python re-implementation
 
 Katharina Schmid (katharina.schmid@bmc.med.lmu.de)
@@ -45,6 +80,8 @@ Katharina Schmid (katharina.schmid@bmc.med.lmu.de)
 Aikaterini Symeonidi (asymeonidi@bmc.med.lmu.de and ksymeonidh@gmail.com)
 
 Angelos Nikolaou (anguelos.nicolaou@gmail.com)
+
+Ida Büschel (Ida.Bueschel@helmholtz-munich.de)
 
 Maria Colomé-Tatché (maria.colome@helmholtz-muenchen.de)
 
