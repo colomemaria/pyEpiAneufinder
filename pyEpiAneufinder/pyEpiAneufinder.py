@@ -14,7 +14,7 @@ from .plotting import karyo_gainloss
 
 def epiAneufinder(fragment_file, outdir, genome_file,
                   blacklist, windowSize,
-                  test='AD', reuse_existing=False, exclude=None,
+                  test='AD', exclude=None, sort_fragment=True,
                   uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000,
                   threshold_cells_nbins=0.05,selected_cells=None,
                   threshold_blacklist_bins=0.85,
@@ -35,7 +35,6 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     windowSize: Size of the window (Reccomended for sparse data - 1e6)
     genome: String containing name of BS.genome object. Necessary for GC correction. Default: "BSgenome.Hsapiens.UCSC.hg38"
     test: Currently only "AD" (=Anderson-Darling) is implemented.
-    reuse_existing: Logical. False removes all the files in the outdir and recomputes everything.
     exclude: String of chromosomes to exclude. Example: c('chrX','chrY','chrM')
     uq: Upper quantile. Default: 0.1
     lq: Lower quantile. Default: 0.9
@@ -81,19 +80,18 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # Sort the fragment file by cell (run over shell)
     # ----------------------------------------------------------------------- 
 
-    print("Sort the fragment file")
-
-    start = time.perf_counter()
-
-    output_file = outdir + "/fragment_file.sortedbycell.tsv.gz"
-
-    cmd = f"zgrep -v '^#' {fragment_file} | sort -k4,4 -k1,1 -k2,2n --parallel={ncores} | gzip > {output_file}"
-
-    subprocess.run(cmd, shell=True, check=True)
-
-    end = time.perf_counter()
-    execution_time = (end - start)/60
-    print(f"Successfully sort fragment file. Execution time: {execution_time:.2f} mins")
+    if sort_fragment:
+        print("Sort the fragment file")
+        start = time.perf_counter()
+        output_file = outdir + "/fragment_file.sortedbycell.tsv.gz"
+        cmd = f"zgrep -v '^#' {fragment_file} | sort -k4,4 -k1,1 -k2,2n --parallel={ncores} | gzip > {output_file}"
+        subprocess.run(cmd, shell=True, check=True)
+        end = time.perf_counter()
+        execution_time = (end - start)/60
+        print(f"Successfully sort fragment file. Execution time: {execution_time:.2f} mins")
+    else:
+        print("Taking fragment file correctly sorted by the user after barcode and position")
+        output_file = fragment_file
 
 
     # ----------------------------------------------------------------------- 
