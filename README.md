@@ -18,7 +18,7 @@ pip install git+https://github.com/colomemaria/pyEpiAneufinder
 
 ### Executing the program
 
-The whole program can be run by calling the main function, using a fragment file as input, defined in the parameter `fragment_file`. The fragment file needs to be sorted first be cell and then by position (chromosome, start). This sorting can either be done manually before running pyEpiAneufinder or automatically within the main function when setting the parameter `sort_fragment = True`.
+The whole program can be run by calling the main function, using a fragment file as input, defined in the parameter `fragment_file`. The fragment file needs to be sorted first by cell and then by position (chromosome, start). This sorting can either be done manually before running pyEpiAneufinder or automatically within the main function when setting the parameter `sort_fragment = True`.
 
 The `genome` needs to be  given as a fasta file. For example, the human genome hg38 can be downloaded from here:
 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
