@@ -37,6 +37,12 @@ pea.epiAneufinder(fragment_file="sample_data/sample.tsv.gz",
                   sort_fragment = True)
 ```
 
+Test data for running epiAneufinder can be found on github in the directory [sample_data](sample_data).
+
+The main output is saved in the file `result_table.csv`, which contains the CNV status per cell and bin encoded with 0=loss, 1=base and 2=gains. More information included intermediate results are saved in `count_matrix.h5ad`. The karyogram is additionally visualized in `Karyogram.png`. For the provided test data it looks like this:
+
+![Karyogram test data](sample_data/Karyogram.png)
+
 ### Calculating karoygram metrics
 
 The resulting CNVs (i.e. the karyogram) can be characterised based on the aneuploidy and heterogeneity score. Given a CNV result matrix with 𝑁 cells and 𝑇 bins and each entry being the CNV status 𝑐𝑖,𝑗 for cell 𝑖 and bin 𝑗, the metrics are defined as:
@@ -64,9 +70,28 @@ pea.compute_heterogeneity_across_sample(res)
 #Result for test data: 0.07377132412672624
 
 #Get the scores per chromosome
-pea.compute_aneuploidy_by_chr(res)
-pea.compute_heterogeneity_by_chr(res)
+aneu_chrom = pea.compute_aneuploidy_by_chr(res)
+heterogen_chrom = pea.compute_heterogeneity_by_chr(res)
+
+#Create a scatterplot for this data
+plot_data = pd.DataFrame({"chrom": aneu_chrom.columns.values,
+                         "aneu": aneu_chrom.iloc[0],
+                         "heterogen": heterogen_chrom.iloc[0]})
+                         
+sns.scatterplot(x="aneu",y="heterogen",data=plot_data)
+
+#Add the chromosome name to each dot
+for i in range(len(plot_data)):
+    plt.annotate(plot_data["chrom"][i], (plot_data["aneu"][i], plot_data["heterogen"][i]))
+    
+plt.xlabel("Aneuploidy per chromosome")
+plt.ylabel("Heterogeneity per chromsome")
+plt.show()                         
 ```
+
+For the example data, the scatter plot looks like this:
+
+![Scatterplot Aneuploidy vs Heterogeneity(sample_data/scatter_aneu_heterogen.png)
 
 ### Authors of the python re-implementation
 
