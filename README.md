@@ -91,7 +91,7 @@ plt.show()
 
 For the example data, the scatter plot looks like this:
 
-![Scatterplot Aneuploidy vs Heterogeneity(sample_data/scatter_aneu_heterogen.png)
+![Scatterplot Aneuploidy vs Heterogeneity](sample_data/scatter_aneu_heterogen.png)
 
 ### Authors of the python re-implementation
 
