@@ -2,6 +2,25 @@ import pandas as pd
 import numpy as np
 from natsort import natsorted
 
+def compute_cnv_burden_cell(df,offset=3):
+    """
+    Function to compute the CNV burden (=aneuploidy score) per cell
+
+    Parameters
+    ----------
+    df: Results from pyEpiAneufinder main function (as pandas data frame)
+    offset: Number of columns to skip at the beginning (default the three annotation columns)
+
+    Output
+    ------
+    Pandas data frame with two columns of barcodes and cnv_burden
+    
+    """
+    cn_matrix = df.iloc[:, offset:].to_numpy()
+    cnv_burden = pd.DataFrame({"barcodes": df.columns.values[offset:],
+                "cnv_burden":np.mean(cn_matrix != 1, axis=0)})
+    return cnv_burden
+
 def compute_aneuploidy_across_sample(df, offset=3):
     """
     Function to compute one aneuploidy score for the complete dataset

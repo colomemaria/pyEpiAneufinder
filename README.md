@@ -43,6 +43,19 @@ The main output is saved in the file `result_table.csv`, which contains the CNV 
 
 ![Karyogram test data](sample_data/Karyogram.png)
 
+### Splitting cells into clones
+
+TODO: write explanation text
+
+```
+import pyEpiAneufinder as pea
+import pandas as pd
+
+res = pd.read_csv("results_sample_data/result_table.csv",index_col=0)
+clones = pea.split_subclones(res, 4)
+
+```
+
 ### Calculating karoygram metrics
 
 The resulting CNVs (i.e. the karyogram) can be characterised based on the aneuploidy and heterogeneity score. Given a CNV result matrix with 𝑁 cells and 𝑇 bins and each entry being the CNV status 𝑐𝑖,𝑗 for cell 𝑖 and bin 𝑗, the metrics are defined as:
@@ -92,6 +105,19 @@ plt.show()
 For the example data, the scatter plot looks like this:
 
 ![Scatterplot Aneuploidy vs Heterogeneity(sample_data/scatter_aneu_heterogen.png)
+
+### Calculating CNV burden per cell
+
+After the same formular, the aneuploidy per cell, also called CNV burden, can be estimated. This is another criterion to identify tumor cells besides marker gene expression.
+
+```
+import pyEpiAneufinder as pea
+import pandas as pd
+
+res = pd.read_csv("results_sample_data/result_table.csv",index_col=0)
+cnv_burden = pea.compute_cnv_burden_cell(res)
+
+```
 
 ### Authors of the python re-implementation
 
