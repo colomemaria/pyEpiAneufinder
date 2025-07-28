@@ -1,10 +1,10 @@
 import pandas as pd
-
 from scipy.spatial.distance import pdist
 from scipy.cluster.hierarchy import linkage, dendrogram
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.patches import Patch
 import seaborn as sns
 
 
@@ -61,14 +61,25 @@ def karyo_gainloss (res, outdir,title_karyo):
         data_filtered = group.drop(columns=["seq", "start", "end"])
         
         sns.heatmap(data_filtered.T, ax=ax, cmap=["#9A32CD", "#00EE76", "#CD0000"], vmin=0, vmax=2, cbar=False)
-        ax.set_title(seq)
+        ax.set_title(seq, rotation=30)
         
         #Remove the axes ticks
         ax.set_xticks([])
         ax.set_yticks([])
-        
+     
     # Add a common x-axis label
     fig.text(0.5, 0.0, 'Position in chromosome', ha='center', va='center', fontsize=12)
+
+    # Add a legend below all plots for loss, base, gain
+    legend_elements = [Patch(facecolor="#9A32CD", edgecolor='black', label='Loss'),
+                       Patch(facecolor="#00EE76", edgecolor='black', label='Base'),
+                       Patch(facecolor="#CD0000", edgecolor='black', label='Gain')]
+
+    fig.legend(handles=legend_elements, loc='lower center', ncol=3, fontsize=12, frameon=False,
+               bbox_to_anchor=(0.5, -0.08))
+
+    # Adjust layout
+    plt.subplots_adjust(bottom=0.2)
 
     # Show the plot
     plt.suptitle(title_karyo)

@@ -45,16 +45,30 @@ The main output is saved in the file `result_table.csv`, which contains the CNV 
 
 ### Splitting cells into clones
 
-TODO: write explanation text
+An easy approximation for identification of subclones in the dataset is splitting the hierarchical clustering using the function `split_subclones()`
+into a user-defined number of cluster `num_clust`.  
 
 ```
 import pyEpiAneufinder as pea
 import pandas as pd
 
 res = pd.read_csv("results_sample_data/result_table.csv",index_col=0)
-clones = pea.split_subclones(res, 4)
+clones = pea.split_subclones(res,num_clust=4)
 
 ```
+These subclones can be visualized as an annotation bar in the karygram using the function `plot_karyo_annotated()`. In general, this function can be applied on all kind of categorical annotations, such as cell types. It requires the annotation parameter as a pandas DataFrame with barcodes as indices (matching the column names of the results) and a column called `annot` with categorical values.
+
+```
+#Reformat to fullfill input requirements for plotting
+annot_dt = clones.copy()
+annot_dt.index = annot_dt.barcode
+annot_dt["annot"] = pd.Categorical("clone" + annot_dt.subclone.astype(str))
+
+pea.plot_karyo_annotated(res,"karyo_annot.png",
+                         annot_dt=annot_dt, title_karyo= "Karyogramm with annotation")
+```
+
+![Karyogram with annotation](sample_data/karyo_annot.png)
 
 ### Calculating karoygram metrics
 
