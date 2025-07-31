@@ -1,6 +1,8 @@
 # pyEpiAneufinder: Identifying copy number alterations from single-cell ATAC-seq data
 
-This package is the python version of our R package epiAneufinder (based on version 1.1.1). The python package is still in beta-testing and contains reduced parameter options compared to the R version. Please report any issues and improvement suggestions via github.
+This package is the python version of our R package epiAneufinder. 
+
+**Important remark:** The python package is still in beta-testing. We welcome your feedback! Please report any issues and improvement suggestions via Github Issues.
 
 epiAneufinder is an algorithm used for calling Copy Number Variations (CNVs) from single-cell ATAC (scATAC) data. Single-cell open chromatin profiling via the single-cell Assay for Transposase-Accessible Chromatin using sequencing (scATAC-seq) assay has become a mainstream measurement of open chromatin in single-cells. epiAneufinder exploits the read count information from scATAC-seq data to extract genome-wide copy number variations (CNVs) for each individual cell. epiAneufinder allows the addition of single-cell CNV information to scATAC-seq data, without the need of additional experiments, unlocking a layer of genomic variation which is otherwise unexplored.
 
@@ -122,7 +124,7 @@ For the example data, the scatter plot looks like this:
 
 ### Calculating CNV burden per cell
 
-After the same formular, the aneuploidy per cell, also called CNV burden, can be estimated. This is another criterion to identify tumor cells besides marker gene expression.
+Based on the same formular, the aneuploidy per cell, also called CNV burden, can be estimated. This is another criterion to identify tumor cells besides marker gene expression.
 
 ```
 import pyEpiAneufinder as pea
@@ -132,6 +134,22 @@ res = pd.read_csv("results_sample_data/result_table.csv",index_col=0)
 cnv_burden = pea.compute_cnv_burden_cell(res)
 
 ```
+
+### Coverage profiles per cell
+
+The CNV predictions of pyEpiAneufinder on individual cells can be further explored by visualizing the count profiles of a specific cell using the function `plot_single_cell_profile()`.
+
+```
+import pyEpiAneufinder as pea
+import pandas as pd
+
+pea.plot_single_cell_profile(outdir="results_sample_data",
+                             cell_name="AGTCCGGTCCACACCT-1",
+                             plot_path="results_sample_data/somy_profile_cell.png")
+
+```
+
+![Count profile for a specific cell](sample_data/somy_profile_cell.png)
 
 ### Authors of the python re-implementation
 
@@ -148,4 +166,4 @@ Maria Colomé-Tatché (maria.colome@helmholtz-muenchen.de)
 ### Version history
 
 * 0.1
-    * Initial Release (based on epiAneufinder v1.1.1)
+    * Initial Release (based on epiAneufinder v1.1.3)
