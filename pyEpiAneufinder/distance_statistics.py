@@ -75,3 +75,4 @@ def seq_dist_ad(seq_data,minsize=1):
     distlist = np.nan_to_num(distlist)
     
     return list(distlist)
+

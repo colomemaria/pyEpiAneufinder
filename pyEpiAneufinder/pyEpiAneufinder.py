@@ -5,12 +5,22 @@ from scipy.sparse import csr_matrix
 import time 
 import os
 import subprocess
+from concurrent.futures import ProcessPoolExecutor, as_completed #heavy CPU
+from concurrent.futures import ThreadPoolExecutor, as_completed #heavy IO
+from tqdm import tqdm
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed
 from .get_breakpoints import getbp
+from .get_breakpoints import fast_getbp
 from .assign_somy import threshold_dist_values, assign_gainloss
 from .plotting import karyo_gainloss
+
+def _process_bp_worker(args):
+    cell, chrom, data_slice, k, minsize, minsizeCNV = args
+    bp = fast_getbp(data_slice, k=k, minsize=minsize, minsizeCNV=minsizeCNV)
+    bp["cell"], bp["seq"] = cell, chrom
+    return bp
 
 def epiAneufinder(fragment_file, outdir, genome_file,
                   blacklist, windowSize,
@@ -18,7 +28,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                   uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000,
                   threshold_cells_nbins=0.05,selected_cells=None,
                   threshold_blacklist_bins=0.85,
-                  ncores=4, minsize=1, k=4, 
+                  ncores=1, minsize=1, k=4, 
                   minsizeCNV=0,plotKaryo=True):
 
     """
@@ -162,27 +172,59 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # ----------------------------------------------------------------------- 
 
     #Assumption: count matrix as anndata object (might need to be changed later)
-    print("Calculating distance AD")
+    print("Calculating distance AD using fast_getbp")
 
     start = time.perf_counter()
+    tasks = []
+    unique_chroms = counts.var["seq"].unique()
 
-    unique_chroms=counts.var["seq"].unique()
-
-    cluster_ad = pd.DataFrame()
+    # Pre-slice all the needed data ahead of time
     for i in range(counts.shape[0]):
-        cell_name = counts.obs.cellID.iloc[i]
+        cell = counts.obs.cellID.iloc[i]
         for chrom in unique_chroms:
-            #Identify the breakpoints
-            bp_chrom=getbp(counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten(),
-                           k=k,minsize=minsize,minsizeCNV=minsizeCNV)
-            bp_chrom["cell"]= cell_name
-            bp_chrom["seq"]=chrom
-        
-            #Merge the pandas data frames across chromosomes to one per cell
-            cluster_ad = pd.concat([cluster_ad,bp_chrom],axis=0,ignore_index=True)
+            mask = counts.var["seq"] == chrom
+            data_slice = counts.X[i, mask.values].toarray().flatten()
+            tasks.append((cell, chrom, data_slice, k, minsize, minsizeCNV))
+
+
+    available_cpus = os.cpu_count()
+
+    #Throw exception if ncores is larger than available CPUs 
+    if ncores > available_cpus:
+        raise ValueError(
+            f"Requested {ncores} cores, but only {available_cpus} CPUs are available."
+        )
+    # Parallel CPU-bound processing
+    results = []
+    with ProcessPoolExecutor(max_workers=ncores) as executor:
+        futures = [executor.submit(_process_bp_worker, t) for t in tasks]
+        for fut in as_completed(futures):
+            results.append(fut.result())
+
+    # Collect results
+    cluster_ad = pd.concat(results, ignore_index=True)
+
+    print("Elapsed:", time.perf_counter() - start)
+
+#    for i in range(counts.shape[0]):
+#        cell_name = counts.obs.cellID.iloc[i]
+#        for chrom in unique_chroms:
+#            #Identify the breakpoints
+#            #bp_chrom=getbp(counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten(),
+#            #               k=k,minsize=minsize,minsizeCNV=minsizeCNV)
+#            data=counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten()
+#            bp_chrom = fast_getbp(data, k=k, minsize=minsize, minsizeCNV=minsizeCNV)
+#            #bp_chrom=fast_getbp(counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten(),
+#            #               k=k,minsize=minsize,minsizeCNV=minsizeCNV)
+#            bp_chrom["cell"]= cell_name
+#            bp_chrom["seq"]=chrom
+#            results.append(bp_chrom)
+#        cluster_ad = pd.concat(results, axis=0, ignore_index=True) #removing the loop here speeds up the code significantly
+#            #Merge the pandas data frames across chromosomes to one per cell
+#            #cluster_ad = pd.concat([cluster_ad,bp_chrom],axis=0,ignore_index=True)
 
     #Save the found breakpoints
-    #cluster_ad.to_csv(outdir+"/breakpoints_unfiltered.csv")
+    cluster_ad.to_csv(outdir+"/breakpoints_unfiltered.csv")
 
     end = time.perf_counter()
     execution_time = (end - start)/60

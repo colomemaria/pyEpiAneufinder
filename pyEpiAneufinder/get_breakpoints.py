@@ -80,3 +80,66 @@ def getbp(seq_data,minsize=1,k=3,minsizeCNV=5):
  
     return(pd.DataFrame({"breakpoint": np.array(bp_filtered, dtype="int64"),
                          "ad_dist": np.array(dist_bp_filtered, dtype="float64")}))
+
+def fast_getbp(seq_data, minsize=1, k=3, minsizeCNV=5):
+    """
+    Function to identify breakpoints (recursive research) with a faster implementation
+
+    Parameters
+    ----------
+    seq_data: Sequential data - Counts per bin for a chromosome (as a numpy array)
+    minsize: Integer. Resolution at the level of ins. Default: 1. Setting it to higher numbers runs the algorithm faster at the cost of resolution
+    k: Integer. Find 2^k segments per chromosome
+    minsizeCNV: Integer. Number of consecutive bins to constitute a possible CNV
+
+    Output
+    ------
+    A Pandas data frame with all breakpoint and the AD distance at this breakpoint
+    
+    """
+    #Save the position and the distance of the breakpoint
+    bp=[] #save only integer
+    dist_bp=[]
+
+    for _ in range(k):
+       
+        segments = np.split(seq_data, sorted(bp))  # Segment the sequence at current breakpoints
+
+        # Compute start index of each segment in original array
+        seg_starts = np.cumsum([0] + [len(seg) for seg in segments[:-1]]) #
+
+        for segment, seg_start in zip(segments, seg_starts):
+            if len(segment) <= 1:
+                continue
+
+            # Compute AD distances for current segment
+            dist_vector = np.array(seq_dist_ad(segment, minsize=minsize))
+            if dist_vector.size == 0:
+                continue
+            # Get index of max AD distance
+            bp_local = ((np.argmax(dist_vector) + 1) * minsize) - 1
+            bp_local = min(bp_local, len(segment) - 1)  # using min to avoiddoing it manually
+            bp_global = bp_local + seg_start
+
+            # Enforce minsizeCNV spacing from other breakpoints
+            if bp:
+                # OLD: bp_neighbors = np.concatenate([np.arange(x - minsizeCNV, x + minsizeCNV + 1) for x in bp])
+                neighbors = set(np.concatenate([np.arange(b - minsizeCNV, b + minsizeCNV + 1) for b in bp]))
+                if bp_global not in neighbors:
+                    bp.append(bp_global)
+                    dist_bp.append(np.max(dist_vector))
+            else:
+                bp.append(bp_global)
+                dist_bp.append(np.max(dist_vector))
+            
+    bp_arr = np.array(bp, dtype=int)
+    dist_arr = np.array(dist_bp, dtype=float)
+
+    if minsizeCNV > 0:
+        valid_mask = (bp_arr >= minsizeCNV) & (bp_arr <= len(seq_data) - minsizeCNV - 1)
+    else:
+        valid_mask = (bp_arr >= 1) & (bp_arr <= len(seq_data) - 2)
+
+    return pd.DataFrame({"breakpoint": bp_arr[valid_mask],"ad_dist": dist_arr[valid_mask]})
+
+    
