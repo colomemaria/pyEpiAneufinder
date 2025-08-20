@@ -1,0 +1,5 @@
+*.DS_Store
+results_sample_data/*
+*__pycache__*
+*.egg-info
+build/
