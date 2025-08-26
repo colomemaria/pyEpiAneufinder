@@ -24,12 +24,13 @@ def _process_bp_worker(args):
 
 def epiAneufinder(fragment_file, outdir, genome_file,
                   blacklist, windowSize,
-                  test='AD', exclude=None, sort_fragment=True,
+                  exclude=None, sort_fragment=True, GC=True,
                   uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000,
                   threshold_cells_nbins=0.05,selected_cells=None,
                   threshold_blacklist_bins=0.85,
                   ncores=1, minsize=1, k=4, 
-                  minsizeCNV=0,plotKaryo=True, resume=False, cellRangerInput=False):
+                  minsizeCNV=0,plotKaryo=True, 
+                  resume=False, cellRangerInput=False):
 
     """
     Main function of epiAneufinder
@@ -44,7 +45,6 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     blacklist: Bed file with blacklisted regions
     windowSize: Size of the window (Reccomended for sparse data - 1e6)
     genome: String containing name of BS.genome object. Necessary for GC correction. Default: "BSgenome.Hsapiens.UCSC.hg38"
-    test: Currently only "AD" (=Anderson-Darling) is implemented.
     exclude: String of chromosomes to exclude. Example: c('chrX','chrY','chrM')
     uq: Upper quantile. Default: 0.1
     lq: Lower quantile. Default: 0.9
@@ -155,31 +155,33 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         print("GC correction")
 
         start = time.perf_counter()
+        if not GC:
+            print("Skipping GC correction as per user request")
+            counts.write(matrix_file, compression="gzip")
+        else:
+            #Perform GC correction per cell
+            all_loess_rows = []
+            for i in range(counts.X.shape[0]):
+                counts_per_window=counts.X[i,:].toarray().flatten()
+                loess_res = get_loess_smoothed(counts_per_window, counts.var.GC.to_numpy())
+                correction = counts_per_window.mean()/loess_res #(loess_res + .000000000001)
+                loess_norm_row = counts_per_window * correction
+                #Round to integer again (speeds runtime significantly!)
+                all_loess_rows.append(np.rint(loess_norm_row).astype(int))
 
-        #Perform GC correction per cell
-        all_loess_rows = []
-        for i in range(counts.X.shape[0]):
-            counts_per_window=counts.X[i,:].toarray().flatten()
-            loess_res = get_loess_smoothed(counts_per_window, counts.var.GC.to_numpy())
-            correction = counts_per_window.mean()/loess_res #(loess_res + .000000000001)
-            loess_norm_row = counts_per_window * correction
-            #Round to integer again (speeds runtime significantly!)
-            all_loess_rows.append(np.rint(loess_norm_row).astype(int))
 
+            #Keep the raw data
+            counts.layers["raw"]=counts.X
 
-        #Keep the raw data
-        counts.layers["raw"]=counts.X
+            #Save the GC normalized matrix in X
+            counts.X = csr_matrix(np.vstack(all_loess_rows))
 
-        #Save the GC normalized matrix in X
-        counts.X = csr_matrix(np.vstack(all_loess_rows))
+            end = time.perf_counter()
+            execution_time = (end - start)/60
+            print(f"Successfully performed GC correction. Execution time: {execution_time:.2f} mins")
 
-        end = time.perf_counter()
-        execution_time = (end - start)/60
-        print(f"Successfully performed GC correction. Execution time: {execution_time:.2f} mins")
-
-        #Save the count matrix
-        #matrix_file = outdir+"/count_matrix.h5ad"
-        counts.write(matrix_file, compression="gzip")
+            #Save the count matrix
+            counts.write(matrix_file, compression="gzip")
     
     # ----------------------------------------------------------------------- 
     # Estimating break points
