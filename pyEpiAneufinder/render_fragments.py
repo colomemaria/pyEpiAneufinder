@@ -11,8 +11,33 @@ import pandas as pd
 import natsort
 import anndata as ad
 from scipy.sparse import csr_matrix
+import scipy.io
+import os
 
 from itertools import groupby
+
+def autodetect_file(basepath):
+    """Return path to gzipped file if available, otherwise plain file."""
+    if os.path.exists(basepath + ".gz"):
+        return basepath + ".gz"
+    elif os.path.exists(basepath):
+        return basepath
+    else:
+        raise FileNotFoundError(f"No file found for {basepath}(.gz)")
+
+def read_mtx_auto(basepath):
+    """Read mtx or mtx.gz file"""
+    path = autodetect_file(basepath)
+    if path.endswith(".gz"):
+        with gzip.open(path, "rt") as f:
+            return scipy.io.mmread(f)
+    else:
+        return scipy.io.mmread(path)
+
+def read_tsv_auto(basepath, header=None, names=None):
+    """Read tsv/bed or gzipped version"""
+    path = autodetect_file(basepath)
+    return pd.read_csv(path, sep="\t", header=header, names=names, compression="gzip" if path.endswith(".gz") else None)
 
 def load_windows_dict(windows_csv: str) -> Dict[str, List[Tuple[int, int, float, float, float]]]:
     with open(windows_csv) as f:
@@ -203,4 +228,108 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags):
     counts.var["end"]=list(all_windows["end"])
     counts.var["GC"]=list(all_windows["GC"])
 
+    return counts
+
+
+def process_count_matrix(windows_csv, minFrags, cellRangerInput):
+    """
+    Process the count matrix from fragments and return an AnnData object.
+    
+    Args:
+        windows_csv (str): Path to the CSV file containing window information.
+        min_frags (int): Minimum number of fragments required for a cell to be included.
+        cellRangerInput (str): Path to the folder containing the count matrix files.
+
+    Returns:
+        counts.AnnData: An AnnData object containing the processed count matrix.
+    """
+    
+    #Loading the count matrix
+    mtx_file = autodetect_file(os.path.join(cellRangerInput, "matrix.mtx"))
+    barcodes_file = autodetect_file(os.path.join(cellRangerInput, "barcodes.tsv"))
+    peaks_file = autodetect_file(os.path.join(cellRangerInput, "peaks.bed"))
+
+    if not (os.path.exists(mtx_file) and os.path.exists(barcodes_file) and os.path.exists(peaks_file)):
+        raise FileNotFoundError("Expected files 'matrix.mtx', 'barcodes.tsv', 'peaks.bed' not found in folder")
+        
+    mtx = scipy.io.mmread(mtx_file).T.tocsr()  # cells × peaks
+    barcodes = pd.read_csv(barcodes_file, header=None)[0].tolist()
+    peaks = pd.read_csv(peaks_file, sep="\t", header=None,names=["chromosome", "start", "end"])
+    
+    if len(barcodes) != mtx.shape[0]:
+        raise ValueError(f"Mismatch: {len(barcodes)} barcodes vs {mtx.shape[0]} cells in matrix.")
+    if peaks.shape[0] != mtx.shape[1]:
+        raise ValueError(f"Mismatch: {peaks.shape[0]} peaks vs {mtx.shape[1]} features in matrix.")
+
+    chr_to_windows = load_windows_dict(windows_csv)
+
+    # Create global index offsets for each chromosome
+    start_df = pd.DataFrame({
+        "chromosome": list(chr_to_windows.keys()),
+        "length": [len(windows) for windows in chr_to_windows.values()]
+    })
+    start_df["start_pos"] = [0] + list(start_df["length"].cumsum()[:-1])
+    start_df["end_pos"] = start_df["length"].cumsum()
+    start_df.set_index("chromosome", inplace=True)
+
+    start_pos_dict = start_df["start_pos"].to_dict()
+
+    total_length = sum(start_df["length"])
+
+    #Mapping peaks to global indices
+    peak_to_window = np.full(peaks.shape[0], -1, dtype=int)
+
+    for chrom, windows in chr_to_windows.items():
+        chrom_peaks = peaks[peaks["chromosome"] == chrom]
+        if chrom_peaks.empty:
+            continue
+
+        mids = ((chrom_peaks["start"].values + chrom_peaks["end"].values) // 2)
+
+        # Extract window boundaries
+        win_starts = np.array([w[0] for w in windows])
+        win_ends   = np.array([w[1] for w in windows])
+
+        # Assign each midpoint to a window
+        idx = np.searchsorted(win_ends, mids)
+        idx = np.clip(idx, 0, len(win_starts) - 1) # Ensure idx is within bounds
+        valid = (idx < len(win_starts)) & (mids >= win_starts[idx])
+
+        global_offset = start_pos_dict[chrom]
+        peak_to_window[chrom_peaks.index[valid]] = global_offset + idx[valid]
+
+    # Drop unmapped peaks
+    mask = peak_to_window != -1
+    mtx = mtx[:, mask]
+    peak_to_window = peak_to_window[mask]
+
+    #Collapse the matrix to the windows
+    data = np.ones_like(peak_to_window)
+    assignment = csr_matrix(
+        (data, (np.arange(len(peak_to_window)), peak_to_window)),
+        shape=(len(peak_to_window), total_length)
+    )
+
+    window_mtx = mtx @ assignment  # cells × windows
+
+    counts = ad.AnnData(window_mtx)
+    counts.obs["cellID"] = barcodes
+
+    # Build dataframe for all windows
+    all_windows = pd.DataFrame([
+        {"seq": chrom, "start": start, "end": end, "GC": GC}
+        for chrom, windows in chr_to_windows.items()
+        for start, end, GC, *rest in windows
+    ])
+    counts.var = all_windows.reset_index(drop=True)
+
+
+    # Filter cells by total counts
+    total_counts = np.array(window_mtx.sum(axis=1)).flatten()
+    keep = total_counts >= minFrags
+    counts = counts[keep].copy()
+    if counts.n_obs == 0:
+        raise ValueError(f"No cells with at least {min_frags} fragments found.")
+
+    print(f"Final matrix: {counts.n_obs} cells × {counts.n_vars} windows")
     return counts
