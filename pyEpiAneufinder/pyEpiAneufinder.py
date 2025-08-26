@@ -50,7 +50,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     lq: Lower quantile. Default: 0.9
     title_karyo: String. Title of the output karyogram
     minFrags: Integer. Minimum number of reads for a cell to pass. Only required for fragments.tsv file. Default: 20000
-    mapqFilter: Filter bam files after a certain mapq value
+    GC: Boolean variable. Whether to perform GC correction
+    sort_fragment: Boolean variable. Whether to sort the fragment file by cell (can take a while). Default: True
     threshold_cells_nbins: Keep only cells that have more than a certain percentage of non-zero bins
     selected_cells: Additional option for filtering the input, either NULL or a file with barcodes of cells to keep (one barcode per line, no header)
     threshold_blacklist_bins: Blacklist a bin if more than the given ratio of cells have zero reads in the bin. Default: 0.85
