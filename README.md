@@ -22,6 +22,8 @@ pip install git+https://github.com/colomemaria/pyEpiAneufinder
 
 The whole program can be run by calling the main function, using a fragment file as input, defined in the parameter `fragment_file`. The fragment file needs to be sorted first by cell and then by position (chromosome, start). This sorting can either be done manually before running pyEpiAneufinder or automatically within the main function when setting the parameter `sort_fragment = True`.
 
+Alternatively, a peak count matrix can be used as input, giving in the 'fragment file' parameter the folder that contain the barcodes, peaks and matrix files. We should note though that the performance of the algorithm might drop, compared to using fragment file as input.
+
 The `genome` needs to be  given as a fasta file. For example, the human genome hg38 can be downloaded from here:
 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
 
