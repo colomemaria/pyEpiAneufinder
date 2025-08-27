@@ -30,7 +30,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                   threshold_blacklist_bins=0.85,
                   ncores=1, minsize=1, k=4, 
                   minsizeCNV=0,plotKaryo=True, 
-                  resume=False, cellRangerInput=False):
+                  resume=False, cellRangerInput=False,
+                  remove_barcodes=None):
 
     """
     Main function of epiAneufinder
@@ -62,6 +63,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     plotKaryo: Boolean variable. Whether the final karyogram is plotted at the end
     resume : Boolean variable. Whether to resume the analysis if the intermmediate/output files already exist
     cellRangerInput: Boolean variable. Whether the input is a cell ranger output (in this case, the fragment file is not needed and the count matrix is used directly)
+    remove_barcodes: Path to TSV file containing barcodes to exclude (one per line)
 
     Output
     ------
@@ -71,6 +73,13 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
     #Create the output dir if it doesn't exist yet
     os.makedirs(outdir, exist_ok=True)
+
+    #Load the barcodes to exclude if provided
+    barcodes_to_remove = None
+    if remove_barcodes is not None:
+        barcodes_to_remove = pd.read_csv(remove_barcodes, header=None)[0].tolist()
+        print(f"Loaded {len(barcodes_to_remove)} barcodes to exclude.")
+
 
     # ----------------------------------------------------------------------- 
     # Create windows from genome file (with GC content per window)
@@ -99,7 +108,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     else:
         if cellRangerInput:
             print("Using cell ranger input. No fragment file needed.")
-            counts = process_count_matrix(windows_file_name,minFrags,fragment_file)  
+            counts = process_count_matrix(windows_file_name,minFrags,fragment_file,remove_barcodes=barcodes_to_remove)  
         else:      
             # ----------------------------------------------------------------------- 
             # Sort the fragment file by cell (run over shell)
@@ -127,7 +136,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
             start = time.perf_counter()
 
-            counts = process_fragments(windows_file_name,output_file,windowSize, minFrags)
+            counts = process_fragments(windows_file_name,output_file,windowSize, minFrags,remove_barcodes=barcodes_to_remove)
 
             end = time.perf_counter()
             execution_time = (end - start)/60
