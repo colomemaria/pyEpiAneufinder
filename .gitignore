@@ -3,3 +3,6 @@ results_sample_data/*
 *__pycache__*
 *.egg-info
 build/
+DMSO_D0_sample_output/
+pyEpiAneufinder/test.py
+.vscode/

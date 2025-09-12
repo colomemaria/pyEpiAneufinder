@@ -45,7 +45,40 @@ def dist_ad(x, y):
 
 
 
-def seq_dist_ad(seq_data,minsize=1):
+def seq_dist_ad(seq_data):
+    """
+    Function to calculate the breakpoints with AD stat given a series of data points
+
+    Parameters
+    ----------
+    seq_data: Normalized read counts per window (as a numeric list)
+    
+    Output
+    ------
+    List with distances for each potential breakpoint
+    
+    """
+    
+    # Create the list of breakpoints to test (with a stepsize of minsize)
+    bp1 = np.arange(0, len(seq_data))
+
+    # Loop over break points
+    n_bps=len(bp1) - 1
+    distlist = np.empty(n_bps)
+    for i in range(n_bps):
+        # Call dist_ad function
+        # In the old version, the central bin was shared by both the left and right segment
+        # Now, the breakpoint is located inbetween the segments
+        distlist[i] = dist_ad(seq_data[:(bp1[i+1])], seq_data[bp1[i+1]:])
+    
+    # Replace NaN values with 0 in distlist
+    distlist = np.nan_to_num(distlist)
+    
+    return list(distlist)
+
+
+
+def seq_dist_ad_old(seq_data, minsize=1):
     """
     Function to calculate the breakpoints with AD stat given a series of data points
 
@@ -75,4 +108,3 @@ def seq_dist_ad(seq_data,minsize=1):
     distlist = np.nan_to_num(distlist)
     
     return list(distlist)
-

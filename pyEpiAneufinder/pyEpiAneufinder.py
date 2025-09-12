@@ -11,14 +11,19 @@ from tqdm import tqdm
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
-from .get_breakpoints import getbp
-from .get_breakpoints import fast_getbp
+from .get_breakpoints import fast_getbp, recursive_getbp_df
 from .assign_somy import threshold_dist_values, assign_gainloss
 from .plotting import karyo_gainloss
 
 def _process_bp_worker(args):
     cell, chrom, data_slice, k, minsize, minsizeCNV = args
     bp = fast_getbp(data_slice, k=k, minsize=minsize, minsizeCNV=minsizeCNV)
+    bp["cell"], bp["seq"] = cell, chrom
+    return bp
+
+def _process_recursive_bp_worker(args):
+    cell, chrom, data_slice, k, n_permutations, alpha = args
+    bp = recursive_getbp_df(data_slice, k=k, n_permutations=n_permutations, alpha=alpha)
     bp["cell"], bp["seq"] = cell, chrom
     return bp
 
@@ -29,7 +34,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                   threshold_cells_nbins=0.05,selected_cells=None,
                   threshold_blacklist_bins=0.85,
                   ncores=1, minsize=1, k=4, 
-                  minsizeCNV=0,plotKaryo=True, 
+                  minsizeCNV=0,n_permutations=500, alpha=0.05,
+                  plotKaryo=True, 
                   resume=False, cellRangerInput=False,
                   remove_barcodes=None):
 
@@ -83,7 +89,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
     # ----------------------------------------------------------------------- 
     # Create windows from genome file (with GC content per window)
-    # --    --------------------------------------------------------------------- 
+    # ----------------------------------------------------------------------- 
 
     print("Binning the genome")
 
@@ -215,7 +221,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             for chrom in unique_chroms:
                 mask = counts.var["seq"] == chrom
                 data_slice = counts.X[i, mask.values].toarray().flatten()
-                tasks.append((cell, chrom, data_slice, k, minsize, minsizeCNV))
+                # tasks.append((cell, chrom, data_slice, k, minsize, minsizeCNV))
+                tasks.append((cell, chrom, data_slice, k, n_permutations, alpha))
 
 
         available_cpus = os.cpu_count()
@@ -228,7 +235,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # Parallel CPU-bound processing
         results = []
         with ProcessPoolExecutor(max_workers=ncores) as executor:
-            futures = [executor.submit(_process_bp_worker, t) for t in tasks]
+            # futures = [executor.submit(_process_bp_worker, t) for t in tasks]
+            futures = [executor.submit(_process_recursive_bp_worker, t) for t in tasks]
             for fut in as_completed(futures):
                 results.append(fut.result())
 
@@ -264,34 +272,35 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # -----------------------------------------------------------------------    
     # Pruning break points and annotating CNV status of each segment
     # ----------------------------------------------------------------------- 
-    breakpoints_pruned_file = outdir+"/breakpoints_pruned.csv"
-    if resume and os.path.exists(breakpoints_pruned_file): #resume if the pruned breakpoints already exist
-        print(f"Resuming: {breakpoints_pruned_file} already exists. Skipping calculation.")
-        breakpoints_pruned=pd.read_csv(breakpoints_pruned_file, index_col=0) #Read the pruned breakpoints file that already exists
-    else:
-        print("Prunning breakpoints")
+    # breakpoints_pruned_file = outdir+"/breakpoints_pruned.csv"
+    # if resume and os.path.exists(breakpoints_pruned_file): #resume if the pruned breakpoints already exist
+    #     print(f"Resuming: {breakpoints_pruned_file} already exists. Skipping calculation.")
+    #     breakpoints_pruned=pd.read_csv(breakpoints_pruned_file, index_col=0) #Read the pruned breakpoints file that already exists
+    # else:
+    #     print("Prunning breakpoints")
 
-        start = time.perf_counter()
-        #Prune irrelevant breakpoints
-        breakpoints_pruned = pd.DataFrame()
-        for cell in cluster_ad["cell"].unique():
-            clusters_cell = cluster_ad[cluster_ad.cell == cell].copy()
-            bp_cell = threshold_dist_values(clusters_cell)
+    #     start = time.perf_counter()
+    #     #Prune irrelevant breakpoints
+    #     breakpoints_pruned = pd.DataFrame()
+    #     for cell in cluster_ad["cell"].unique():
+    #         clusters_cell = cluster_ad[cluster_ad.cell == cell].copy()
+    #         bp_cell = threshold_dist_values(clusters_cell)
 
-            #Merge the pandas data frames across chromosomes to one per cell
-            breakpoints_pruned = pd.concat([breakpoints_pruned, bp_cell], axis=0, ignore_index=True)
+    #         #Merge the pandas data frames across chromosomes to one per cell
+    #         breakpoints_pruned = pd.concat([breakpoints_pruned, bp_cell], axis=0, ignore_index=True)
 
-        #Save the pruned breakpoints
-        breakpoints_pruned.to_csv(breakpoints_pruned_file)
+    #     #Save the pruned breakpoints
+    #     breakpoints_pruned.to_csv(breakpoints_pruned_file)
 
-        end = time.perf_counter()
-        execution_time = (end - start)/60
-        print(f"Successfully discarded irrelevant breakpoints. Execution time: {execution_time:.2f} mins")
+    #     end = time.perf_counter()
+    #     execution_time = (end - start)/60
+    #     print(f"Successfully discarded irrelevant breakpoints. Execution time: {execution_time:.2f} mins")
 
+    breakpoints_pruned = cluster_ad.copy() #Pruning step becomes obsolete with permutation test
     results_file=outdir+"/result_table.csv"
     if resume and os.path.exists(results_file): #resume if the results file already exist
         print(f"Resuming: {results_file} already exists. Skipping calculation.")
-        sommies_ad=pd.read_csv(results_file, index_col=0) #Read the sommies file that already exists
+        somies_ad=pd.read_csv(results_file, index_col=0) #Read the sommies file that already exists
     else:
         print("Assign somies")
 
@@ -364,7 +373,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     if(plotKaryo):
         if resume and os.path.exists(results_file): #resume if the results file already exist
             print(f"Resuming: {results_file} already exists. Skipping calculation, plotting karyogram.")
-            somies_ad=pd.read_csv(results_file, index_col=0) #Read the sommies file that already exists
+            somies_ad=pd.read_csv(results_file, index_col=0, sep="\t") #Read the sommies file that already exists
             karyo_gainloss(somies_ad,outdir+"/",title_karyo)
         else:
             start = time.perf_counter()
