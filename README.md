@@ -22,6 +22,10 @@ pip install git+https://github.com/colomemaria/pyEpiAneufinder
 
 The whole program can be run by calling the main function, using a fragment file as input, defined in the parameter `fragment_file`. The fragment file needs to be sorted first by cell and then by position (chromosome, start). This sorting can either be done manually before running pyEpiAneufinder or automatically within the main function when setting the parameter `sort_fragment = True`.
 
+Alternatively, a peak count matrix can be used as input, giving in the `fragment_file` parameter the folder that contain the barcodes, peaks and matrix files. The `cellRangerInput` parameter should be set to True. We should note though that the performance of the algorithm might drop, compared to using fragment file as input.
+
+Be default, the algorithm performs GC correction on the calculated windows counts. If the user decides to skip that step, the `GC` parameter should be set to False. We would advice against skipping the GC correction, based on our benchmarks.
+
 The `genome` needs to be  given as a fasta file. For example, the human genome hg38 can be downloaded from here:
 https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz
 
@@ -29,14 +33,19 @@ Additionally, a `blacklist` file for regions of low mappability is required, the
 
 ```
 import pyEpiAneufinder as pea
-pea.epiAneufinder(fragment_file="sample_data/sample.tsv.gz", 
-                  outdir="results_sample_data", 
-                  genome_file="hg38.fa.gz", 
-                  blacklist="sample_data/hg38-blacklist.v2.bed",
-                  windowSize=100000, 
+pea.epiAneufinder(fragment_file = "sample_data/sample.tsv.gz", 
+                  outdir = "results_sample_data", 
+                  genome_file = "hg38.fa.gz", 
+                  blacklist = "sample_data/hg38-blacklist.v2.bed",
+                  windowSize = 100000,
+                  ncores = 1, # Default value for number of cores to use is 1, please adjust accordingly
                   exclude = ["chrX","chrY"],
                   minFrags = 20000,
-                  sort_fragment = True)
+                  resume = False,
+                  cellRangerInput = False,
+                  GC = True,
+                  sort_fragment = True,
+                  remove_barcodes = None)
 ```
 
 Test data for running epiAneufinder can be found on github in the directory [sample_data](sample_data).
