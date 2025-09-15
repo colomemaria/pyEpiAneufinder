@@ -26,12 +26,13 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                   blacklist, windowSize,
                   exclude=None, sort_fragment=True, GC=True,
                   uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000,
-                  threshold_cells_nbins=0.05,selected_cells=None,
+                  threshold_cells_nbins=0.05,
                   threshold_blacklist_bins=0.85,
                   ncores=1, minsize=1, k=4, 
                   minsizeCNV=0,plotKaryo=True, 
                   resume=False, cellRangerInput=False,
-                  remove_barcodes=None):
+                  remove_barcodes=None,
+                  selected_cells=None):
 
     """
     Main function of epiAneufinder
@@ -79,6 +80,11 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     if remove_barcodes is not None:
         barcodes_to_remove = pd.read_csv(remove_barcodes, header=None)[0].tolist()
         print(f"Loaded {len(barcodes_to_remove)} barcodes to exclude.")
+    
+    #Load the barcodes to include if provided
+    if selected_cells is not None:
+        selected_cells = pd.read_csv(selected_cells, header=None)[0].tolist()
+        print(f"Loaded {len(selected_cells)} barcodes to include.")
 
 
     # ----------------------------------------------------------------------- 
@@ -108,7 +114,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     else:
         if cellRangerInput:
             print("Using cell ranger input. No fragment file needed.")
-            counts = process_count_matrix(windows_file_name,minFrags,fragment_file,remove_barcodes=barcodes_to_remove)  
+            counts = process_count_matrix(windows_file_name,minFrags,fragment_file,remove_barcodes=barcodes_to_remove, selected_cells=selected_cells)  
         else:      
             # ----------------------------------------------------------------------- 
             # Sort the fragment file by cell (run over shell)
@@ -136,7 +142,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
             start = time.perf_counter()
 
-            counts = process_fragments(windows_file_name,output_file,windowSize, minFrags,remove_barcodes=barcodes_to_remove)
+            counts = process_fragments(windows_file_name,output_file,windowSize, minFrags,remove_barcodes=barcodes_to_remove, selected_cells=selected_cells)
 
             end = time.perf_counter()
             execution_time = (end - start)/60
@@ -291,7 +297,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     results_file=outdir+"/result_table.csv"
     if resume and os.path.exists(results_file): #resume if the results file already exist
         print(f"Resuming: {results_file} already exists. Skipping calculation.")
-        sommies_ad=pd.read_csv(results_file, index_col=0) #Read the sommies file that already exists
+        somies_ad=pd.read_csv(results_file, index_col=0, sep="\t") #Read the sommies file that already exists
     else:
         print("Assign somies")
 
@@ -364,7 +370,6 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     if(plotKaryo):
         if resume and os.path.exists(results_file): #resume if the results file already exist
             print(f"Resuming: {results_file} already exists. Skipping calculation, plotting karyogram.")
-            somies_ad=pd.read_csv(results_file, index_col=0) #Read the sommies file that already exists
             karyo_gainloss(somies_ad,outdir+"/",title_karyo)
         else:
             start = time.perf_counter()
