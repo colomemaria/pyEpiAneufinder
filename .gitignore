@@ -6,3 +6,5 @@ build/
 DMSO_D0_sample_output/
 pyEpiAneufinder/test.py
 .vscode/
+SNU601_output/
+COLO320_output/
