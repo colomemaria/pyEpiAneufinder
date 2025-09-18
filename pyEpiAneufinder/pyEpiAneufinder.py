@@ -3,6 +3,7 @@ import numpy as np
 import anndata as ad
 from scipy.sparse import csr_matrix
 import time 
+import json
 import os
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed #heavy CPU
@@ -35,6 +36,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                   threshold_blacklist_bins=0.85,
                   ncores=1, minsize=1, k=4, 
                   minsizeCNV=0,n_permutations=500, alpha=0.05,
+                  mean_shrinking=False, trimmed_mean=False,
                   plotKaryo=True, 
                   resume=False, cellRangerInput=False,
                   remove_barcodes=None,
@@ -346,11 +348,18 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             #Save all indices as a new dictonary entry
             clusters_pruned[cell]=cluster_list
 
+        # Save clusters_pruned
+        with open(outdir+'/clusters.json', 'w') as f:
+            json.dump(clusters_pruned, f)
+
         # Assign somies for each cell
         results = {
             cell: list(assign_gainloss(
                 counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
-                cluster_cell))
+                cluster_cell,
+                mean_shrinking=mean_shrinking,
+                trimmed_mean=trimmed_mean)
+            )
             for cell, cluster_cell in clusters_pruned.items() }
 
         #Need to reset the index before concatenating with results

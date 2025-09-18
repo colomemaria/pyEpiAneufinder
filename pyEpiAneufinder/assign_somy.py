@@ -71,7 +71,7 @@ def assign_gainloss(seq_data,cluster,uq=0.9,lq=0.1,mean_shrinking=False,trimmed_
     """
         
     #Normalize data
-    counts_normal[counts_normal < 0] = 0    #Remove < 0 artifacts resulting from GC correction
+    seq_data[seq_data < 0] = 0    #Remove < 0 artifacts resulting from GC correction
     counts_normal = seq_data / np.mean(seq_data)
     
     #Get global quantiles (for filtering)
