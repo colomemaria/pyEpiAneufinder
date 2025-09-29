@@ -164,7 +164,7 @@ def get_loess_smoothed(counts_per_window: np.ndarray, gc: np.ndarray) -> Tuple[n
         return counts_per_window
     
 
-def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags,remove_barcodes):
+def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags,remove_barcodes, selected_cells):
 
     chr_to_windows = load_windows_dict(windows_csv)
 
@@ -217,9 +217,15 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags,remov
     counts.obs["cellID"] = cell_ids
 
     if remove_barcodes is not None and len(remove_barcodes) > 0:
+        #remove listed barcodes
         mask = ~counts.obs["cellID"].isin(remove_barcodes)
         counts = counts[mask].copy()
         print(f"Removed {np.sum(~mask)} barcodes. {counts.n_obs} cells remain.")
+    elif selected_cells is not None and len(selected_cells) > 0:
+        # Keep only listed barcodes
+        mask = counts.obs["cellID"].isin(selected_cells)
+        counts = counts[mask].copy()
+        print(f"Kept {np.sum(mask)} barcodes. {counts.n_obs} cells remain.")
 
     #Create one pandas data frame for the windows
     all_windows = pd.DataFrame([
@@ -236,7 +242,7 @@ def process_fragments(windows_csv,fragments,fragments_chunk_size, minFrags,remov
     return counts
 
 
-def process_count_matrix(windows_csv, minFrags, cellRangerInput,remove_barcodes):
+def process_count_matrix(windows_csv, minFrags, cellRangerInput,remove_barcodes, selected_cells):
     """
     Process the count matrix from CellRanger and return an AnnData object.
     
@@ -245,6 +251,7 @@ def process_count_matrix(windows_csv, minFrags, cellRangerInput,remove_barcodes)
         min_frags (int): Minimum number of fragments required for a cell to be included.
         cellRangerInput (str): Path to the folder containing the count matrix files.
         remove_barcodes (List[str], optional): List of barcodes to exclude. Defaults to None.
+        selected_cells (List[str], optional): List of barcodes to include. Defaults to None.
 
     Returns:
         counts.AnnData: An AnnData object containing the processed count matrix.
@@ -271,6 +278,15 @@ def process_count_matrix(windows_csv, minFrags, cellRangerInput,remove_barcodes)
         mtx = mtx[mask_keep, :]
         barcodes = [bc for bc, keep in zip(barcodes, mask_keep) if keep]
         print(f"Removed {len(remove_barcodes)} barcodes. {len(barcodes)} cells remain.")
+    elif selected_cells is not None and len(selected_cells) > 0:
+        selected_cells = [str(bc) for bc in selected_cells]
+        print(f"Selecting {len(selected_cells)} barcodes.")
+        selected_cells = [bc for bc in selected_cells if bc in barcodes]
+        print(f"Keeping {len(selected_cells)} barcodes.")
+        mask_keep = [bc in selected_cells for bc in barcodes]
+        mtx = mtx[mask_keep, :]
+        barcodes = [bc for bc, keep in zip(barcodes, mask_keep) if keep]
+        print(f"Kept {len(selected_cells)} barcodes. {len(barcodes)} cells remain.")
         
     if len(barcodes) != mtx.shape[0]:
         raise ValueError(f"Mismatch: {len(barcodes)} barcodes vs {mtx.shape[0]} cells in matrix.")
@@ -345,7 +361,7 @@ def process_count_matrix(windows_csv, minFrags, cellRangerInput,remove_barcodes)
     keep = total_counts >= minFrags
     counts = counts[keep].copy()
     if counts.n_obs == 0:
-        raise ValueError(f"No cells with at least {min_frags} fragments found.")
+        raise ValueError(f"No cells with at least {minFrags} fragments found.")
 
     print(f"Final matrix: {counts.n_obs} cells × {counts.n_vars} windows")
     return counts
