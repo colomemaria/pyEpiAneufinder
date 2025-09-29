@@ -26,7 +26,8 @@ dependencies = [
   "anndata",
   "natsort",
   "biopython",
-  "scikit-misc"
+  "scikit-misc",
+  "tqdm"
 ]
 
 [tool.setuptools]
