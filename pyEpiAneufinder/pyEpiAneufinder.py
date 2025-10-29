@@ -13,7 +13,7 @@ from tqdm import tqdm
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
 from .get_breakpoints import fast_getbp, recursive_getbp_df
-from .assign_somy import threshold_dist_values, assign_gainloss
+from .assign_somy import threshold_dist_values, assign_gainloss, assign_gainloss_new
 from .plotting import karyo_gainloss
 
 def _process_bp_worker(args):
@@ -23,8 +23,10 @@ def _process_bp_worker(args):
     return bp
 
 def _process_recursive_bp_worker(args):
-    cell, chrom, data_slice, k, n_permutations, alpha = args
-    bp = recursive_getbp_df(data_slice, k=k, n_permutations=n_permutations, alpha=alpha)
+    cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha = args
+    bp = recursive_getbp_df(data_slice_chr, data_slice_cell, k=k, n_permutations=n_permutations, alpha=alpha)
+    # cell, chrom, data_slice, k, n_permutations, alpha = args
+    # bp = recursive_getbp_df(data_slice, k=k, n_permutations=n_permutations, alpha=alpha)
     bp["cell"], bp["seq"] = cell, chrom
     return bp
 
@@ -204,6 +206,11 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             execution_time = (end - start)/60
             print(f"Successfully performed GC correction. Execution time: {execution_time:.2f} mins")
 
+            # Remove <0 artefacts
+            expr_matrix = counts.X
+            expr_matrix[expr_matrix < 0] = 0
+            counts.X = expr_matrix
+
             #Save the count matrix
             counts.write(matrix_file, compression="gzip")
     
@@ -228,9 +235,12 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             cell = counts.obs.cellID.iloc[i]
             for chrom in unique_chroms:
                 mask = counts.var["seq"] == chrom
-                data_slice = counts.X[i, mask.values].toarray().flatten()
-                # tasks.append((cell, chrom, data_slice, k, minsize, minsizeCNV))
-                tasks.append((cell, chrom, data_slice, k, n_permutations, alpha))
+                # data_slice = counts.X[i, mask.values].toarray().flatten()
+                # tasks.append((cell, chrom, data_slice, k, n_permutations, alpha))
+                data_slice_chr = counts.X[i, mask.values].toarray().flatten()
+                data_slice_cell = counts.X[i, :].toarray().flatten()
+                tasks.append((cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha))
+                # tasks.append((cell, chrom, data_slice, k, minsize, minsizeCNV)) # old
 
 
         available_cpus = os.cpu_count()
@@ -316,6 +326,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
         #Number of bins per chromosome
         num_bins_chrom = counts.var["seq"].value_counts(sort=False)
+        unique_chroms = counts.var["seq"].unique()
 
         #Convert breakpoints into segment annotations per cell
         clusters_pruned={}
@@ -351,16 +362,45 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # Save clusters_pruned
         with open(outdir+'/clusters.json', 'w') as f:
             json.dump(clusters_pruned, f)
+        
+        # with open(outdir + '/clusters.json', 'r') as f:
+        #     clusters_pruned = json.load(f)
 
         # Assign somies for each cell
-        results = {
-            cell: list(assign_gainloss(
+        # results = {
+        #     cell: list(assign_gainloss(
+        #         counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
+        #         cluster_cell,
+        #         mean_shrinking=mean_shrinking,
+        #         trimmed_mean=trimmed_mean,
+        #         lq=lq,uq=uq)
+        #     )
+        #     for cell, cluster_cell in clusters_pruned.items() }
+        
+        # Normalize counts to 100000
+        expr_matrix = counts.X
+        # Normalize per cell
+        expr_matrix = expr_matrix / (expr_matrix.sum(axis=1) / 1e5)
+        # Make sure we're working with a dense ndarray
+        expr_matrix = np.asarray(expr_matrix)
+        # Store the result
+        counts.X = expr_matrix
+        # Remove cells with high standard deviation
+        counts = counts[counts.X.std(axis=1) < 10]
+        clusters_pruned = {k: v for k, v in clusters_pruned.items() if k in counts.obs.cellID.values}
+
+        results = {}
+        stats = {}
+
+        for cell, cluster_cell in clusters_pruned.items():
+            cnv_states, s, trimmed_mean, mean = assign_gainloss_new(
                 counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
                 cluster_cell,
-                mean_shrinking=mean_shrinking,
-                trimmed_mean=trimmed_mean)
+                lq=lq,uq=uq
             )
-            for cell, cluster_cell in clusters_pruned.items() }
+            results[cell] = list(cnv_states)
+            # scaling_factors[cell] = s
+            stats[cell] = [s, trimmed_mean, mean]
 
         #Need to reset the index before concatenating with results
         annot = counts.var[["seq", "start", "end"]]
@@ -369,6 +409,11 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # Add region information
         somies_ad = pd.concat([annot, pd.DataFrame(results)], axis=1)
 
+        # Save scaling factors, trimmed count means and total counts for each cell
+        stats_ad = pd.DataFrame(stats).T
+        stats_ad.rename(columns={0: 'scaling_factor', 1: 'trimmed_mean', 2:'mean'}, inplace=True)
+        stats_ad.to_csv(outdir+"/stats.csv", sep='\t', index=True)
+
         end = time.perf_counter()
         execution_time = (end - start)/60
         print(f"Successfully identified somies. Execution time: {execution_time:.2f} mins")
@@ -376,6 +421,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
         #Save the results as a tsv file
         somies_ad.to_csv(results_file, sep="\t", index=True)
+        # scaling_factors_df.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
 
         print("""A .tsv file with the results has been written to disk. 
           It contains the copy number states for each cell per bin. 
