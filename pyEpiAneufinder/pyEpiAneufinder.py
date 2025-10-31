@@ -14,14 +14,8 @@ from tqdm import tqdm
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
 from .get_breakpoints import fast_getbp, recursive_getbp_df
-from .assign_somy import threshold_dist_values, assign_gainloss, assign_gainloss_new
+from .assign_somy import assign_gainloss, assign_gainloss_new
 from .plotting import karyo_gainloss
-
-def _process_bp_worker(args):
-    cell, chrom, data_slice, k, minsize, minsizeCNV = args
-    bp = fast_getbp(data_slice, k=k, minsize=minsize, minsizeCNV=minsizeCNV)
-    bp["cell"], bp["seq"] = cell, chrom
-    return bp
 
 def _process_recursive_bp_worker(args):
     cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha = args
@@ -53,13 +47,12 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
     Parameters
     ----------
     fragment_file: Folder with bam files, a fragments.tsv/bed file or a folder with a count matrix (required files: matrix.mtx(.gz), barcodes.tsv(.gz) and peaks.bed(.gz))
+    mode: String. Choose between "Watson" (conservative) and "Holmes" (explorative)
     outdir: Path to output directory
     blacklist: Bed file with blacklisted regions
     windowSize: Size of the window (Reccomended for sparse data - 1e6)
     genome: String containing name of BS.genome object. Necessary for GC correction. Default: "BSgenome.Hsapiens.UCSC.hg38"
     exclude: String of chromosomes to exclude. Example: c('chrX','chrY','chrM')
-    uq: Upper quantile. Default: 0.1
-    lq: Lower quantile. Default: 0.9
     title_karyo: String. Title of the output karyogram
     minFrags: Integer. Minimum number of reads for a cell to pass. Only required for fragments.tsv file. Default: 20000
     GC: Boolean variable. Whether to perform GC correction
@@ -68,9 +61,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
     selected_cells: Additional option for filtering the input, either NULL or a file with barcodes of cells to keep (one barcode per line, no header)
     threshold_blacklist_bins: Blacklist a bin if more than the given ratio of cells have zero reads in the bin. Default: 0.85
     ncores: Number of cores for parallelization. Default: 4
-    minsize: Integer. Resolution at the level of ins. Default: 1. Setting it to higher numbers runs the algorithm faster at the cost of resolution
     k: Integer. Find 2^k segments per chromosome
-    minsizeCNV: Integer. Number of consecutive bins to constitute a possible CNV
     plotKaryo: Boolean variable. Whether the final karyogram is plotted at the end
     resume : Boolean variable. Whether to resume the analysis if the intermmediate/output files already exist
     cellRangerInput: Boolean variable. Whether the input is a cell ranger output (in this case, the fragment file is not needed and the count matrix is used directly)
