@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import anndata as ad
+import scipy as sp
 from scipy.sparse import csr_matrix
 import time 
 import json
@@ -30,15 +31,14 @@ def _process_recursive_bp_worker(args):
     bp["cell"], bp["seq"] = cell, chrom
     return bp
 
-def epiAneufinder(fragment_file, outdir, genome_file,
+def epiAneufinder(fragment_file, mode, outdir, genome_file,
                   blacklist, windowSize,
                   exclude=None, sort_fragment=True, GC=True,
-                  uq=0.9, lq=0.1, title_karyo=None, minFrags = 20000,
+                  title_karyo=None, minFrags = 20000,
                   threshold_cells_nbins=0.05,
                   threshold_blacklist_bins=0.85,
-                  ncores=1, minsize=1, k=4, 
-                  minsizeCNV=0,n_permutations=500, alpha=0.05,
-                  mean_shrinking=False, trimmed_mean=False,
+                  ncores=1, k=4, 
+                  n_permutations=500, alpha=0.05,
                   plotKaryo=True, 
                   resume=False, cellRangerInput=False,
                   remove_barcodes=None,
@@ -200,16 +200,20 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             counts.layers["raw"]=counts.X
 
             #Save the GC normalized matrix in X
-            counts.X = csr_matrix(np.vstack(all_loess_rows))
+            expr_matrix = np.vstack(all_loess_rows)
+            #Remove GC artefacts
+            expr_matrix[expr_matrix < 0] = 0
+            expr_matrix[expr_matrix > (expr_matrix.mean() + 100*expr_matrix.std())] = 0
+            # Normalize counts to 100000
+            expr_matrix = expr_matrix / ((expr_matrix.sum(axis=1) / 1e5)[:, np.newaxis])
+            # Save and convert to sparse
+            counts.X = csr_matrix(expr_matrix)
+            # Remove cells with high standard deviation
+            counts = counts[counts.X.A.std(axis=1) < 10]
 
             end = time.perf_counter()
             execution_time = (end - start)/60
             print(f"Successfully performed GC correction. Execution time: {execution_time:.2f} mins")
-
-            # Remove <0 artefacts
-            expr_matrix = counts.X
-            expr_matrix[expr_matrix < 0] = 0
-            counts.X = expr_matrix
 
             #Save the count matrix
             counts.write(matrix_file, compression="gzip")
@@ -219,7 +223,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # ----------------------------------------------------------------------- 
 
     #Assumption: count matrix as anndata object (might need to be changed later)
-    breakpoints_file=outdir+"/breakpoints_unfiltered.csv"
+    breakpoints_file=outdir+"/breakpoints.csv"
     if resume and os.path.exists(breakpoints_file): #resume if the breakpoints already exist
         print(f"Resuming: {breakpoints_file} already exists. Skipping calculation.")
         cluster_ad=pd.read_csv(breakpoints_file, index_col=0) #Read the breakpoints file that already exists
@@ -240,7 +244,6 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                 data_slice_chr = counts.X[i, mask.values].toarray().flatten()
                 data_slice_cell = counts.X[i, :].toarray().flatten()
                 tasks.append((cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha))
-                # tasks.append((cell, chrom, data_slice, k, minsize, minsizeCNV)) # old
 
 
         available_cpus = os.cpu_count()
@@ -258,29 +261,11 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             for fut in as_completed(futures):
                 results.append(fut.result())
 
-        # Collect results
+        #Collect results
         cluster_ad = pd.concat(results, ignore_index=True)
-
         print("Elapsed:", time.perf_counter() - start)
 
-#    for i in range(counts.shape[0]):
-#        cell_name = counts.obs.cellID.iloc[i]
-#        for chrom in unique_chroms:
-#            #Identify the breakpoints
-#            #bp_chrom=getbp(counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten(),
-#            #               k=k,minsize=minsize,minsizeCNV=minsizeCNV)
-#            data=counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten()
-#            bp_chrom = fast_getbp(data, k=k, minsize=minsize, minsizeCNV=minsizeCNV)
-#            #bp_chrom=fast_getbp(counts.X[i,(counts.var["seq"]==chrom).to_numpy()].toarray().flatten(),
-#            #               k=k,minsize=minsize,minsizeCNV=minsizeCNV)
-#            bp_chrom["cell"]= cell_name
-#            bp_chrom["seq"]=chrom
-#            results.append(bp_chrom)
-#        cluster_ad = pd.concat(results, axis=0, ignore_index=True) #removing the loop here speeds up the code significantly
-#            #Merge the pandas data frames across chromosomes to one per cell
-#            #cluster_ad = pd.concat([cluster_ad,bp_chrom],axis=0,ignore_index=True)
-
-        #Save the found breakpoints
+        #Save breakpoints
         cluster_ad.to_csv(breakpoints_file)
 
         end = time.perf_counter()
@@ -288,33 +273,9 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         print(f"Successfully identified breakpoints. Execution time: {execution_time:.2f} mins")
 
     # -----------------------------------------------------------------------    
-    # Pruning break points and annotating CNV status of each segment
+    # Annotating CNV status of each segment
     # ----------------------------------------------------------------------- 
-    # breakpoints_pruned_file = outdir+"/breakpoints_pruned.csv"
-    # if resume and os.path.exists(breakpoints_pruned_file): #resume if the pruned breakpoints already exist
-    #     print(f"Resuming: {breakpoints_pruned_file} already exists. Skipping calculation.")
-    #     breakpoints_pruned=pd.read_csv(breakpoints_pruned_file, index_col=0) #Read the pruned breakpoints file that already exists
-    # else:
-    #     print("Prunning breakpoints")
-
-    #     start = time.perf_counter()
-    #     #Prune irrelevant breakpoints
-    #     breakpoints_pruned = pd.DataFrame()
-    #     for cell in cluster_ad["cell"].unique():
-    #         clusters_cell = cluster_ad[cluster_ad.cell == cell].copy()
-    #         bp_cell = threshold_dist_values(clusters_cell)
-
-    #         #Merge the pandas data frames across chromosomes to one per cell
-    #         breakpoints_pruned = pd.concat([breakpoints_pruned, bp_cell], axis=0, ignore_index=True)
-
-    #     #Save the pruned breakpoints
-    #     breakpoints_pruned.to_csv(breakpoints_pruned_file)
-
-    #     end = time.perf_counter()
-    #     execution_time = (end - start)/60
-    #     print(f"Successfully discarded irrelevant breakpoints. Execution time: {execution_time:.2f} mins")
-
-    breakpoints_pruned = cluster_ad.copy() #Pruning step becomes obsolete with permutation test
+    breakpoints = cluster_ad.copy()
     results_file=outdir+"/result_table.csv"
     if resume and os.path.exists(results_file): #resume if the results file already exist
         print(f"Resuming: {results_file} already exists. Skipping calculation.")
@@ -329,8 +290,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         unique_chroms = counts.var["seq"].unique()
 
         #Convert breakpoints into segment annotations per cell
-        clusters_pruned={}
-        for cell in breakpoints_pruned["cell"].unique():
+        clusters={}
+        for cell in breakpoints["cell"].unique():
         
             counter=1
             cluster_list=[]
@@ -338,8 +299,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             for chrom in unique_chroms:
 
                 #Extract all breakpoints from this chromosome
-                bp_chrom = breakpoints_pruned.breakpoint[(breakpoints_pruned.seq==chrom) & 
-                                                     (breakpoints_pruned.cell==cell) ]
+                bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
+                                                     (breakpoints.cell==cell) ]
             
                 #If no breakpoints exist for this chromsome, save all windows as one segment
                 if bp_chrom.empty:
@@ -357,50 +318,38 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                 counter = max(cluster_list)+1
     
             #Save all indices as a new dictonary entry
-            clusters_pruned[cell]=cluster_list
+            clusters[cell]=cluster_list
 
-        # Save clusters_pruned
+        # Save clusters
         with open(outdir+'/clusters.json', 'w') as f:
-            json.dump(clusters_pruned, f)
+            json.dump(clusters, f)
         
         # with open(outdir + '/clusters.json', 'r') as f:
-        #     clusters_pruned = json.load(f)
+        #     clusters = json.load(f)
 
-        # Assign somies for each cell
-        # results = {
-        #     cell: list(assign_gainloss(
-        #         counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
-        #         cluster_cell,
-        #         mean_shrinking=mean_shrinking,
-        #         trimmed_mean=trimmed_mean,
-        #         lq=lq,uq=uq)
-        #     )
-        #     for cell, cluster_cell in clusters_pruned.items() }
-        
-        # Normalize counts to 100000
-        expr_matrix = counts.X
-        # Normalize per cell
-        expr_matrix = expr_matrix / (expr_matrix.sum(axis=1) / 1e5)
-        # Make sure we're working with a dense ndarray
-        expr_matrix = np.asarray(expr_matrix)
-        # Store the result
-        counts.X = expr_matrix
-        # Remove cells with high standard deviation
-        counts = counts[counts.X.std(axis=1) < 10]
-        clusters_pruned = {k: v for k, v in clusters_pruned.items() if k in counts.obs.cellID.values}
+        if mode == 'watson':
+            # Assign somies for each cell
+            print("Watson mode: Proceeding with due caution, as always.")
+            results = {}
+            results = {
+                cell: list(assign_gainloss(
+                    counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
+                    cluster_cell)
+                )
+                for cell, cluster_cell in clusters.items() }
 
-        results = {}
-        stats = {}
-
-        for cell, cluster_cell in clusters_pruned.items():
-            cnv_states, s, trimmed_mean, mean = assign_gainloss_new(
-                counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
-                cluster_cell,
-                lq=lq,uq=uq
-            )
-            results[cell] = list(cnv_states)
-            # scaling_factors[cell] = s
-            stats[cell] = [s, trimmed_mean, mean]
+        elif mode == 'holmes':
+            # Assign somies for each cell
+            print("Holmes mode: Dear Watson — let's see what others missed.")
+            results = {}
+            # stats = {}
+            for cell, cluster_cell in clusters.items():
+                cnv_states, s, trimmed_mean = assign_gainloss_new(
+                    counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
+                    cluster_cell
+                )
+                results[cell] = list(cnv_states)
+            # stats[cell] = [s, trimmed_mean]
 
         #Need to reset the index before concatenating with results
         annot = counts.var[["seq", "start", "end"]]
@@ -409,19 +358,17 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # Add region information
         somies_ad = pd.concat([annot, pd.DataFrame(results)], axis=1)
 
-        # Save scaling factors, trimmed count means and total counts for each cell
-        stats_ad = pd.DataFrame(stats).T
-        stats_ad.rename(columns={0: 'scaling_factor', 1: 'trimmed_mean', 2:'mean'}, inplace=True)
-        stats_ad.to_csv(outdir+"/stats.csv", sep='\t', index=True)
+        # # Save scaling factors, trimmed count means and total counts for each cell
+        # stats_ad = pd.DataFrame(stats).T
+        # stats_ad.rename(columns={0: 'scaling_factor', 1: 'trimmed_mean'}, inplace=True)
 
         end = time.perf_counter()
         execution_time = (end - start)/60
         print(f"Successfully identified somies. Execution time: {execution_time:.2f} mins")
 
-
         #Save the results as a tsv file
         somies_ad.to_csv(results_file, sep="\t", index=True)
-        # scaling_factors_df.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
+        # stats_ad.to_csv(outdir+"/stats.csv", sep='\t', index=True)
 
         print("""A .tsv file with the results has been written to disk. 
           It contains the copy number states for each cell per bin. 
@@ -432,14 +379,10 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # ----------------------------------------------------------------------- 
 
     if(plotKaryo):
-        if resume and os.path.exists(results_file): #resume if the results file already exist
-            print(f"Resuming: {results_file} already exists. Skipping calculation, plotting karyogram.")
-            karyo_gainloss(somies_ad,outdir+"/",title_karyo)
-        else:
-            start = time.perf_counter()
+        start = time.perf_counter()
 
-            karyo_gainloss(somies_ad,outdir+"/",title_karyo)
+        karyo_gainloss(somies_ad,outdir+"/",title_karyo)
 
-            end = time.perf_counter()
-            execution_time = (end - start)/60
-            print(f"Successfully plotted karyogram. Execution time: {execution_time:.2f} mins")
+        end = time.perf_counter()
+        execution_time = (end - start)/60
+        print(f"Successfully plotted karyogram. Execution time: {execution_time:.2f} mins")

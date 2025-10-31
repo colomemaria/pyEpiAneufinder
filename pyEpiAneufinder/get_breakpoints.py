@@ -138,7 +138,7 @@ def recursive_getbp(seq_data, seq_data_cell, k=3, depth=0, offset=0, n_permutati
     #                             n_permutations=n_permutations, alpha=alpha)
 
     return left_bps + [(bp_global, bp_dist, pval, pval_global)] + right_bps
-    # eturn left_bps + [(bp_global, bp_dist, pval)] + right_bps
+    # return left_bps + [(bp_global, bp_dist, pval)] + right_bps
 
 
 
