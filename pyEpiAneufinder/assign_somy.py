@@ -88,6 +88,50 @@ def assign_gainloss(seq_data,cluster):
     return(CNV_states)
 
 
+def assign_gainloss_v1(seq_data,cluster,uq=0.9,lq=0.1):
+    """
+    Function to assign CNV states
+
+    Parameters
+    ----------
+    seq_data: Sequential data - Counts per bin (as a numpy array)
+    cluster: Numeric list showing segment identity
+    uq: Upper quantile to trim to calculate the cluster means
+    lq: Lower quantile to trim to calculate the cluster means
+
+    Output
+    ------
+    List with CNV states for each window (0=loss, 1=base, 2=gain)
+    
+    """
+        
+    #Normalize data
+    counts_normal = seq_data / np.mean(seq_data)
+    counts_normal[counts_normal < 0] = 0
+    
+    #Get global quantiles (for filtering)
+    qus_global = np.quantile(seq_data, [0.01, 0.98])
+    
+    #Estimate trimmed mean per cluster (remove extreme quantiles before)
+    grouped_data = pd.Series(counts_normal).groupby(cluster)
+    cnmean = grouped_data.apply(lambda x: compute_cluster_mean(x, lq, uq, qus_global))
+    
+    # Identify clusters/segments with Z scores between -1 and 1
+    cnmean_scaled = (cnmean - np.mean(cnmean)) / np.std(cnmean,ddof=1)
+    cnmean_significance = (cnmean_scaled >= -1) & (cnmean_scaled <= 1)
+    
+    #Set these values to the mean (will become CNV status 1)
+    cnmean[cnmean_significance] = np.mean(cnmean)
+    
+    #Calcuate the fold change
+    cnmean_fc = cnmean / np.mean(cnmean)
+    
+    #Truncate it to have no FC larger than 2 (all should be gain)
+    cnmean_fc[cnmean_fc > 2] = 2
+    
+    CNV_states = round(cnmean_fc[cluster])
+    return(CNV_states)
+
 def compute_cluster_mean(x,lq,uq,qus_global):
     """
     Help function for assign_gainloss to calculate the trimmed mean

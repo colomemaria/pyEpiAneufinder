@@ -1,4 +1,5 @@
 from .pyEpiAneufinder import epiAneufinder
+from .pyEpiAneufinder_v1 import epiAneufinder_v1
 from .get_breakpoints import getbp
 from .distance_statistics import dist_ad, seq_dist_ad
 from .assign_somy import threshold_dist_values, assign_gainloss
