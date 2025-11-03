@@ -200,7 +200,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
             # Save and convert to sparse
             counts.X = csr_matrix(expr_matrix)
             # Remove cells with high standard deviation
-            counts = counts[counts.X.A.std(axis=1) < 10]
+            counts = counts[counts.X.toarray().std(axis=1) < 10]
 
             end = time.perf_counter()
             execution_time = (end - start)/60
