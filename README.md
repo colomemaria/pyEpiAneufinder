@@ -170,7 +170,7 @@ Angelos Nikolaou (anguelos.nicolaou@gmail.com)
 
 Ida Büschel (Ida.Bueschel@helmholtz-munich.de)
 
-Maria Colomé-Tatché (maria.colome@helmholtz-muenchen.de)
+Maria Colomé-Tatché (maria.colome@bmc.med.lmu.de)
 
 ### Version history
 
