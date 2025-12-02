@@ -31,8 +31,8 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
                   title_karyo=None, minFrags = 20000,
                   threshold_cells_nbins=0.05,
                   threshold_blacklist_bins=0.85,
-                  ncores=1, k=4, 
-                  n_permutations=500, alpha=0.05,
+                  ncores=1, k=2, 
+                  n_permutations=1000, alpha=0.001,
                   plotKaryo=True, 
                   resume=False, cellRangerInput=False,
                   remove_barcodes=None,
@@ -333,14 +333,14 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
             # Assign somies for each cell
             print("Holmes mode: Dear Watson — let's see what others missed.")
             results = {}
-            # stats = {}
+            scaling_factors = {}
             for cell, cluster_cell in clusters.items():
                 cnv_states, s, trimmed_mean = assign_gainloss_new(
                     counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
                     cluster_cell
                 )
                 results[cell] = list(cnv_states)
-            # stats[cell] = [s, trimmed_mean]
+                scaling_factors[cell] = s
 
         #Need to reset the index before concatenating with results
         annot = counts.var[["seq", "start", "end"]]
@@ -349,19 +349,16 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
         # Add region information
         somies_ad = pd.concat([annot, pd.DataFrame(results)], axis=1)
 
-        # # Save scaling factors, trimmed count means and total counts for each cell
-        # stats_ad = pd.DataFrame(stats).T
-        # stats_ad.rename(columns={0: 'scaling_factor', 1: 'trimmed_mean'}, inplace=True)
-
         end = time.perf_counter()
         execution_time = (end - start)/60
         print(f"Successfully identified somies. Execution time: {execution_time:.2f} mins")
 
-        #Save the results as a tsv file
+        #Save the results as csv files
         somies_ad.to_csv(results_file, sep="\t", index=True)
-        # stats_ad.to_csv(outdir+"/stats.csv", sep='\t', index=True)
+        sf_ad = pd.DataFrame.from_dict(scaling_factors, orient='index', columns=['s'])
+        sf_ad.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
 
-        print("""A .tsv file with the results has been written to disk. 
+        print("""A .csv file with the results has been written to disk. 
           It contains the copy number states for each cell per bin. 
           0 denotes 'Loss', 1 denotes 'Normal', 2 denotes 'Gain'.""")
 
