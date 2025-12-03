@@ -66,7 +66,7 @@ def make_windows(genome_file, bed_file, window_size, exclude=None):
             g_content = window_seq.seq.count("g")
             n_content = window_seq.seq.count("n")
             N_content = window_seq.seq.count("N")
-            total_N=(N_content+n_content)//window_size
+            total_N=(N_content+n_content)/window_size #change here to float instead of integer division.
             gc_content = (C_content+c_content+G_content+g_content)/window_size
             at_content = (a_content+A_content+T_content+t_content)/window_size
 

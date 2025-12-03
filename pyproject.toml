@@ -27,7 +27,8 @@ dependencies = [
   "natsort",
   "biopython",
   "scikit-misc",
-  "tqdm"
+  "tqdm",
+  "pytest"
 ]
 
 [tool.setuptools]
