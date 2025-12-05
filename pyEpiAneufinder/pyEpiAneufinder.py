@@ -355,8 +355,10 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
 
         #Save the results as csv files
         somies_ad.to_csv(results_file, sep="\t", index=True)
-        sf_ad = pd.DataFrame.from_dict(scaling_factors, orient='index', columns=['s'])
-        sf_ad.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
+
+        if mode == 'holmes':
+            sf_ad = pd.DataFrame.from_dict(scaling_factors, orient='index', columns=['s'])
+            sf_ad.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
 
         print("""A .csv file with the results has been written to disk. 
           It contains the copy number states for each cell per bin. 
