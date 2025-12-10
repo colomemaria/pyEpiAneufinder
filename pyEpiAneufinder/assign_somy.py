@@ -194,13 +194,16 @@ def weighted_scale_search(seg_means, seg_lengths, k_max=6, s_grid=None):
     if s_grid is None:
         # Generate a grid around the median segment mean
         median_val = np.median(seg_means)
-        s_grid = np.linspace(median_val * 0.5, median_val * 1, 100)
+        s_grid = np.linspace(median_val * 0.5, np.min([1.2, median_val * 0.75]), 100)
 
-    # Possible integer copy number states
-    ks = np.arange(0, k_max + 1)
+    # # Possible integer copy number states
+    # ks = np.arange(0, k_max + 1)
 
-    # Penalize deviations from diploid (k=2)
-    state_weights = np.array([2.0, 1.5, 0.5, 1/3, 1/4, 1/5, 1/6])
+    # # Penalize deviations from diploid (k=2)
+    # state_weights = np.array([2.0, 1.5, 0.5, 1/3, 1/4, 1/5, 1/6])
+
+    ks = np.array([0, 1, 2, 3.5, 4, 5, 6])
+    state_weights = np.array([2.0, 1.5, 0.5, 1/3.5, 1/4, 1/5, 1/6])
 
     # Compute scores
     scores = {}
