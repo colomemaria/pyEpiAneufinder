@@ -74,6 +74,12 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
     
     """
 
+    #Check that a possible p-value was chosen dependent on the number of permutations
+    if (1/(n_permutations+1))>alpha:
+        raise ValueError(f"Chosen significance thresold of {alpha} is to low for \n"
+                         f"the chosen number of permutations {n_permutations} which allow \n"
+                         f"calculation of p-values up to {1/(n_permutations+1)}")
+
     #Create the output dir if it doesn't exist yet
     os.makedirs(outdir, exist_ok=True)
 
