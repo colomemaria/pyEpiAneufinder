@@ -11,6 +11,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed #heavy CPU
 from concurrent.futures import ThreadPoolExecutor, as_completed #heavy IO
 from tqdm import tqdm
 import warnings
+from importlib.metadata import version
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
@@ -73,6 +74,8 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
     csv file with predictions, png file with karyogram (if plotKaryo=True) as well as intermediate results
     
     """
+
+    print(f"Running pyEpiAneufinder version {version('pyEpiAneufinder')}")
 
     #Check that a possible p-value was chosen dependent on the number of permutations
     if (1/(n_permutations+1))>alpha:
@@ -168,8 +171,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
 
         #Check the parameter for non-zero bins (too low will cause problems with somy assignment)
         if threshold_cells_nbins < 0.25:
-            warnings.warn("""Warning: Setting the threshold_cells_nbins parameter lower than 0.25 will 
-                  can cause problems during the somy assignment (as the 75% quantile needs to be >0).""")
+            warnings.warn("Warning: Setting threshold_cells_nbins < 0.25 will can cause problems during the somy assignment (as the 75% quantile needs to be >0).")
 
         #Exclude cells that have no signal in most bins
         nonzero_cell = counts.X.getnnz(axis=1)
@@ -212,7 +214,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
             # Save and convert to sparse
             counts.X = csr_matrix(expr_matrix)
             # Remove cells with high standard deviation
-            counts = counts[counts.X.toarray().std(axis=1) < 10]
+            counts = counts[counts.X.toarray().std(axis=1) < 10].copy()
 
             end = time.perf_counter()
             execution_time = (end - start)/60
