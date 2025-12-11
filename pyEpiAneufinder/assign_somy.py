@@ -161,7 +161,7 @@ def compute_cluster_mean(x,lq,uq,qus_global):
     return y.mean()
 
 
-def weighted_scale_search(seg_means, seg_lengths, k_max=6, s_grid=None):
+def weighted_scale_search(seg_means, seg_lengths, k_max=6, s_grid=None, median_val=None):
     """
     Weighted scale-factor grid search for CNV calling.
 
@@ -193,7 +193,7 @@ def weighted_scale_search(seg_means, seg_lengths, k_max=6, s_grid=None):
 
     if s_grid is None:
         # Generate a grid around the median segment mean
-        median_val = np.median(seg_means)
+        #median_val = np.median(seg_means)
         s_grid = np.linspace(median_val * 0.5, np.min([1.2, median_val * 0.75]), 100)
 
     # # Possible integer copy number states
@@ -255,8 +255,12 @@ def assign_gainloss_new(seq_data, cluster, s_grid=None):
     # segment lengths (# of bins per segment)
     seg_lengths = grouped_data.size()
 
+    #Estimate the median value for the s_grid
+    seg_means_per_bin = np.array([seg_means[c] for c in cluster])
+
     # run scale-factor grid search
-    best_s, cn_states, _ = weighted_scale_search(seg_means.values, seg_lengths.values, s_grid=s_grid)
+    best_s, cn_states, _ = weighted_scale_search(seg_means.values, seg_lengths.values, 
+                                                 s_grid=s_grid, median_val=np.median(seg_means_per_bin))
 
     # cn_states is per-segment (same order as seg_mean.index)
     # seg_mean.index contains the segment labels
