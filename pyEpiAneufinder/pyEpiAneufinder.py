@@ -10,6 +10,7 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed #heavy CPU
 from concurrent.futures import ThreadPoolExecutor, as_completed #heavy IO
 from tqdm import tqdm
+import warnings
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
@@ -29,7 +30,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
                   blacklist, windowSize,
                   exclude=None, sort_fragment=True, GC=True,
                   title_karyo=None, minFrags = 20000,
-                  threshold_cells_nbins=0.05,
+                  threshold_cells_nbins=0.25,
                   threshold_blacklist_bins=0.85,
                   ncores=1, k=2, 
                   n_permutations=1000, alpha=0.001,
@@ -153,17 +154,22 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
         # Filtering cells
         # -----------------------------------------------------------------------
 
-        #Exclude cells that have no signal in most bins
-        nonzero_cell = counts.X.getnnz(axis=1)
-        filter_cells = nonzero_cell > threshold_cells_nbins * counts.X.shape[1]
-        counts = counts[filter_cells,:].copy()
-        print(f"Filtering cells without enough coverage, {counts.X.shape[0]} cells remain.")
-
         #Exclude bins that have no signal in most cells
         nonzero_bins = counts.X.getnnz(axis=0)
         filter_bins = nonzero_bins >= (1- threshold_blacklist_bins) * counts.X.shape[0]
         counts = counts[:,filter_bins].copy()
         print(f"Filtering windows without enough coverage, {counts.X.shape[1]} windows remain.")
+
+        #Check the parameter for non-zero bins (too low will cause problems with somy assignment)
+        if threshold_cells_nbins < 0.25:
+            warnings.warn("""Warning: Setting the threshold_cells_nbins parameter lower than 0.25 will 
+                  can cause problems during the somy assignment (as the 75% quantile needs to be >0).""")
+
+        #Exclude cells that have no signal in most bins
+        nonzero_cell = counts.X.getnnz(axis=1)
+        filter_cells = nonzero_cell > threshold_cells_nbins * counts.X.shape[1]
+        counts = counts[filter_cells,:].copy()
+        print(f"Filtering cells without enough coverage, {counts.X.shape[0]} cells remain.")
 
         # ----------------------------------------------------------------------- 
         # GC correction
