@@ -348,13 +348,15 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
             print("Holmes mode: Dear Watson — let's see what others missed.")
             results = {}
             scaling_factors = {}
+            seg_vals = {}
             for cell, cluster_cell in clusters.items():
-                cnv_states, s, trimmed_mean = assign_gainloss_new(
+                cnv_states, s, _, seg_means = assign_gainloss_new(
                     counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
                     cluster_cell
                 )
                 results[cell] = list(cnv_states)
                 scaling_factors[cell] = s
+                seg_vals[cell] = list(seg_means)
 
         #Need to reset the index before concatenating with results
         annot = counts.var[["seq", "start", "end"]]
@@ -373,6 +375,9 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
         if mode == 'holmes':
             sf_ad = pd.DataFrame.from_dict(scaling_factors, orient='index', columns=['s'])
             sf_ad.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
+
+            median_ad = pd.DataFrame(seg_vals)
+            median_ad.to_csv(outdir+"/seg_vals_per_cell.csv", sep="\t", index=True)
 
         print("""A .csv file with the results has been written to disk. 
           It contains the copy number states for each cell per bin. 

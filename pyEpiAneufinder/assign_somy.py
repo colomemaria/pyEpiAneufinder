@@ -258,9 +258,12 @@ def assign_gainloss_new(seq_data, cluster, s_grid=None):
     #Estimate the median value for the s_grid
     seg_means_per_bin = np.array([seg_means[c] for c in cluster])
 
+    #Get the median value for the cell
+    median_val = np.median(seg_means_per_bin)
+
     # run scale-factor grid search
     best_s, cn_states, _ = weighted_scale_search(seg_means.values, seg_lengths.values, 
-                                                 s_grid=s_grid, median_val=np.median(seg_means_per_bin))
+                                                 s_grid=s_grid, median_val=median_val)
 
     # cn_states is per-segment (same order as seg_mean.index)
     # seg_mean.index contains the segment labels
@@ -271,4 +274,4 @@ def assign_gainloss_new(seq_data, cluster, s_grid=None):
     bin_cn_states = np.array([seg2state[c] for c in cluster])
     bin_cn_states = np.clip(bin_cn_states, 1, 3) - 1
 
-    return bin_cn_states, best_s, trimmed_mean_iqr(seq_data, lb=False)
+    return bin_cn_states, best_s, trimmed_mean_iqr(seq_data, lb=False), seg_means_per_bin
