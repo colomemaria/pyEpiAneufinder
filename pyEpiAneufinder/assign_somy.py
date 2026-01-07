@@ -185,9 +185,14 @@ def weighted_scale_search(seg_means, seg_lengths, k_max=6, s_grid=None, median_v
     scores : dict
         Mapping from scale factor -> weighted score.
     """
+
+    # Potential check that kmax is at least 4
+    #if k_max<4:
+    #    raise ValueError("kmax (number of states) needs to be at least 4!")
+    
     # clip seg_means at 0.5 * max integer copy number to avoid choosing too large s
     seg_means = np.asarray(seg_means)
-    seg_means[seg_means > (k_max*0.5)] = k_max*0.5
+    seg_means[seg_means > ((k_max+1)*0.5*median_val)] = (k_max+1)*0.5*median_val
     # Compute seg_lengths as numpy array
     seg_lengths = np.asarray(seg_lengths)
 
@@ -196,14 +201,11 @@ def weighted_scale_search(seg_means, seg_lengths, k_max=6, s_grid=None, median_v
         #median_val = np.median(seg_means)
         s_grid = np.linspace(median_val * 0.5, np.min([1.2, median_val * 0.75]), 100)
 
-    # # Possible integer copy number states
-    # ks = np.arange(0, k_max + 1)
+    # Possible integer copy number states
+    ks = np.arange(0, k_max + 1)
 
-    # # Penalize deviations from diploid (k=2)
-    # state_weights = np.array([2.0, 1.5, 0.5, 1/3, 1/4, 1/5, 1/6])
-
-    ks = np.array([0, 1, 2, 3.5, 4, 5, 6])
-    state_weights = np.array([2.0, 1.5, 0.5, 1/3.5, 1/4, 1/5, 1/6])
+    # Penalize deviations from diploid (k=2)
+    state_weights = np.concatenate((np.array([2.0, 1.5]),1 / np.arange(2,k_max+1)))
 
     # Compute scores
     scores = {}
