@@ -37,6 +37,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
                   n_permutations=1000, alpha=0.001,
                   plotKaryo=True, 
                   resume=False, cellRangerInput=False,
+                  keep_sorted_fragfile = False,
                   remove_barcodes=None,
                   selected_cells=None):
 
@@ -60,14 +61,15 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
     GC: Boolean variable. Whether to perform GC correction
     sort_fragment: Boolean variable. Whether to sort the fragment file by cell (can take a while). Default: True
     threshold_cells_nbins: Keep only cells that have more than a certain percentage of non-zero bins
-    selected_cells: Additional option for filtering the input, either NULL or a file with barcodes of cells to keep (one barcode per line, no header)
     threshold_blacklist_bins: Blacklist a bin if more than the given ratio of cells have zero reads in the bin. Default: 0.85
     ncores: Number of cores for parallelization. Default: 4
     k: Integer. Find 2^k segments per chromosome
     plotKaryo: Boolean variable. Whether the final karyogram is plotted at the end
     resume : Boolean variable. Whether to resume the analysis if the intermmediate/output files already exist
     cellRangerInput: Boolean variable. Whether the input is a cell ranger output (in this case, the fragment file is not needed and the count matrix is used directly)
+    keep_sorted_fragfile: Boolean variable. Whether the resorted fragment file should be saved permanently (only releveant for sort_fragmet=TRUE)
     remove_barcodes: Path to TSV file containing barcodes to exclude (one per line)
+    selected_cells: Additional option for filtering the input, either NULL or a file with barcodes of cells to keep (one barcode per line, no header)
 
     Output
     ------
@@ -154,6 +156,10 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
             start = time.perf_counter()
 
             counts = process_fragments(windows_file_name,output_file,windowSize, minFrags,remove_barcodes=barcodes_to_remove, selected_cells=selected_cells)
+
+            if sort_fragment and (not keep_sorted_fragfile):
+                cmd = f"rm {output_file}"
+                subprocess.run(cmd, shell=True, check=True)
 
             end = time.perf_counter()
             execution_time = (end - start)/60
@@ -356,7 +362,8 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
                 )
                 results[cell] = list(cnv_states)
                 scaling_factors[cell] = s
-                seg_vals[cell] = list(seg_means)
+                #Normalize segment means by scaling factor and round to save storage space later
+                seg_vals[cell] = np.round(seg_means / s,2).tolist()
 
         #Need to reset the index before concatenating with results
         annot = counts.var[["seq", "start", "end"]]
@@ -377,7 +384,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
             sf_ad.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
 
             median_ad = pd.DataFrame(seg_vals)
-            median_ad.to_csv(outdir+"/seg_vals_per_cell.csv", sep="\t", index=True)
+            median_ad.to_csv(outdir+"/scaled_segments.csv", sep="\t", index=True)
 
         print("""A .csv file with the results has been written to disk. 
           It contains the copy number states for each cell per bin. 
