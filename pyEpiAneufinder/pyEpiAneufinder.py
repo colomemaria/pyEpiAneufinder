@@ -27,7 +27,7 @@ def _process_recursive_bp_worker(args):
     bp["cell"], bp["seq"] = cell, chrom
     return bp
 
-def epiAneufinder(fragment_file, mode, outdir, genome_file,
+def epiAneufinder(fragment_file, outdir, genome_file,
                   blacklist, windowSize,
                   exclude=None, sort_fragment=True, GC=True,
                   title_karyo=None, minFrags = 20000,
@@ -286,9 +286,11 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
     # -----------------------------------------------------------------------    
     # Annotating CNV status of each segment
     # ----------------------------------------------------------------------- 
+    
     breakpoints = cluster_ad.copy()
-    results_file=outdir+"/result_table.csv"
-    if resume and os.path.exists(results_file): #resume if the results file already exist
+    os.makedirs(outdir+"/outs", exist_ok=True)
+    results_file=outdir+"/outs/result_table.tsv.gz"
+    if resume and os.path.exists(results_file): #resume if the results file already exists
         print(f"Resuming: {results_file} already exists. Skipping calculation.")
         somies_ad=pd.read_csv(results_file, index_col=0, sep="\t") #Read the sommies file that already exists
     else:
@@ -301,75 +303,74 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
         unique_chroms = counts.var["seq"].unique()
 
         #Convert breakpoints into segment annotations per cell
-        clusters={}
-        for cell in breakpoints["cell"].unique():
-        
-            counter=1
-            cluster_list=[]
-        
-            for chrom in unique_chroms:
-
-                #Extract all breakpoints from this chromosome
-                bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
-                                                     (breakpoints.cell==cell) ]
+        cluster_file = outdir+'/clusters.json'
+        if resume and os.path.exists(cluster_file): #resume if file already exists 
+            with open(outdir + '/clusters.json', 'r') as f:
+                clusters = json.load(f)
+        else: 
+            clusters={}
+            for cell in breakpoints["cell"].unique():
             
-                #If no breakpoints exist for this chromsome, save all windows as one segment
-                if bp_chrom.empty:
-                    cluster_list += [counter] * num_bins_chrom[chrom]
-                else:
-                
-                    #Otherwise calculate the length of each segment (in the right order)
-                    bp_chrom = sorted([0,num_bins_chrom[chrom]]+bp_chrom.tolist())
-                    segment_size = np.diff(bp_chrom)
-                
-                    #Add for each segment the indices
-                    cluster_list += np.repeat(range(counter,len(segment_size)+counter),segment_size).tolist()
+                counter=1
+                cluster_list=[]
             
-                #Decide which index the next segment should get
-                counter = max(cluster_list)+1
-    
-            #Save all indices as a new dictonary entry
-            clusters[cell]=cluster_list
+                for chrom in unique_chroms:
 
-        # Save clusters
-        with open(outdir+'/clusters.json', 'w') as f:
-            json.dump(clusters, f)
+                    #Extract all breakpoints from this chromosome
+                    bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
+                                                        (breakpoints.cell==cell) ]
+                
+                    #If no breakpoints exist for this chromsome, save all windows as one segment
+                    if bp_chrom.empty:
+                        cluster_list += [counter] * num_bins_chrom[chrom]
+                    else:
+                    
+                        #Otherwise calculate the length of each segment (in the right order)
+                        bp_chrom = sorted([0,num_bins_chrom[chrom]]+bp_chrom.tolist())
+                        segment_size = np.diff(bp_chrom)
+                    
+                        #Add for each segment the indices
+                        cluster_list += np.repeat(range(counter,len(segment_size)+counter),segment_size).tolist()
+                
+                    #Decide which index the next segment should get
+                    counter = max(cluster_list)+1
         
-        # with open(outdir + '/clusters.json', 'r') as f:
-        #     clusters = json.load(f)
+                #Save all indices as a new dictonary entry
+                clusters[cell]=cluster_list
 
-        if mode == 'watson':
-            # Assign somies for each cell
-            print("Watson mode: Proceeding with due caution, as always.")
-            results = {}
-            results = {
-                cell: list(assign_gainloss(
-                    counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
-                    cluster_cell)
-                )
-                for cell, cluster_cell in clusters.items() }
+            # Save clusters
+            with open(outdir+'/clusters.json', 'w') as f:
+                json.dump(clusters, f)
 
-        elif mode == 'holmes':
-            # Assign somies for each cell
-            print("Holmes mode: Dear Watson — let's see what others missed.")
-            results = {}
-            scaling_factors = {}
-            seg_vals = {}
-            for cell, cluster_cell in clusters.items():
-                cnv_states, s, _, seg_means = assign_gainloss_new(
-                    counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
-                    cluster_cell
-                )
-                results[cell] = list(cnv_states)
-                scaling_factors[cell] = s
-                #Normalize segment means by scaling factor and round to save storage space later
-                seg_vals[cell] = np.round(seg_means / s,2).tolist()
+        # Impute CNV status for each cell
+        print("Watson proceeds with due caution--as always--while Holmes investigates beyond the obvious.")
+        results_int = {}
+        results_cont = {}
+        results_holmes = {}
+        results_watson = {}
+        results = {}
+        scaling_factors = {}
+        for cell, cluster_cell in clusters.items():
+            int_states, cont_scores, holmes_states, watson_states, combined_states, s = assign_gainloss_new(
+                counts.X[(counts.obs.cellID == cell).to_numpy()].toarray().flatten(),
+                cluster_cell
+            )
+            results_int[cell] = list(int_states)
+            results_cont[cell] = list(cont_scores)
+            results_holmes[cell] = list(holmes_states)
+            results_watson[cell] = list(watson_states)
+            results[cell] = list(combined_states)
+            scaling_factors[cell] = s
 
         #Need to reset the index before concatenating with results
         annot = counts.var[["seq", "start", "end"]]
         annot.reset_index(drop=True, inplace=True)
 
         # Add region information
+        int_ad = pd.concat([annot, pd.DataFrame(results_int)], axis=1)
+        cont_ad = pd.concat([annot, pd.DataFrame(results_cont)], axis=1)
+        somies_holmes_ad = pd.concat([annot, pd.DataFrame(results_holmes)], axis=1)
+        somies_watson_ad = pd.concat([annot, pd.DataFrame(results_watson)], axis=1)
         somies_ad = pd.concat([annot, pd.DataFrame(results)], axis=1)
 
         end = time.perf_counter()
@@ -377,18 +378,32 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
         print(f"Successfully identified somies. Execution time: {execution_time:.2f} mins")
 
         #Save the results as csv files
-        somies_ad.to_csv(results_file, sep="\t", index=True)
+        int_ad.to_csv(outdir+"/outs/integer_states.tsv.gz", sep="\t", index=True, compression="gzip")
+        cont_ad.to_csv(outdir+"/outs/continuous_scores.tsv.gz", sep="\t", index=True, compression="gzip")
+        somies_holmes_ad.to_csv(outdir+"/outs/result_table_holmes.tsv.gz", sep="\t", index=True, compression="gzip")
+        somies_watson_ad.to_csv(outdir+"/outs/result_table_watson.tsv.gz", sep="\t", index=True, compression="gzip")
+        somies_ad.to_csv(results_file, sep="\t", index=True, compression="gzip")
 
-        if mode == 'holmes':
-            sf_ad = pd.DataFrame.from_dict(scaling_factors, orient='index', columns=['s'])
-            sf_ad.to_csv(outdir+"/scaling_factors.csv", sep="\t", index=True)
+        print(
+            "Saved integer CNV states to integer_states.csv (0-6).\n"
+            "Holmes mapping: {0,1} --> loss (0), {2} --> base (1), {3,4,5,6} --> gain (2).\n"
+            "Mapped results are stored in result_table_holmes.csv."
+        )
 
-            median_ad = pd.DataFrame(seg_vals)
-            median_ad.to_csv(outdir+"/scaled_segments.csv", sep="\t", index=True)
+        print(
+            "Saved continuous CNV scores to continuous_scores.csv (0-6).\n"
+            "Watson mapping: <=1 --> loss (0), >1 and <3 --> base (1), >=3 --> gain (2).\n"
+            "Mapped results are stored in result_table_watson.csv."
+        )
 
-        print("""A .csv file with the results has been written to disk. 
-          It contains the copy number states for each cell per bin. 
-          0 denotes 'Loss', 1 denotes 'Normal', 2 denotes 'Gain'.""")
+        print(
+            "Saved consensus CNV calls to result_table.csv\n"
+            "(0=loss, 0.5=weak loss, 1=baseline, 1.5=weak gain, 2=gain),\n"
+            "combining Holmes and Watson."
+)
+
+        sf_ad = pd.DataFrame.from_dict(scaling_factors, orient='index', columns=['s'])
+        sf_ad.to_csv(outdir+"/outs/scaling_factors.tsv.gz", sep="\t", index=True, compression="gzip")
 
     # ----------------------------------------------------------------------- 
     # Plot the result as a karyogram
@@ -397,7 +412,7 @@ def epiAneufinder(fragment_file, mode, outdir, genome_file,
     if(plotKaryo):
         start = time.perf_counter()
 
-        karyo_gainloss(somies_ad,outdir+"/",title_karyo)
+        karyo_gainloss(somies_ad, outdir+"/outs/", title_karyo)
 
         end = time.perf_counter()
         execution_time = (end - start)/60

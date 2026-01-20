@@ -8,7 +8,7 @@ from matplotlib.patches import Patch
 import seaborn as sns
 
 
-def karyo_gainloss (res, outdir,title_karyo):
+def karyo_gainloss (res, outdir, title_karyo, n_colors=5):
     """
     Function to plot the final karyogram
 
@@ -55,27 +55,39 @@ def karyo_gainloss (res, outdir,title_karyo):
     leaf_order = [l + 3 for l in leaf_order[::-1]] # Reverse the order and add + 3 (first three columns)
     res = res.iloc[:, [0,1,2]+leaf_order]
 
-    # Iterate over each unique 'seq' and plot in the respective grid
+        # Define colors and legend based on n_colors
+    if n_colors == 3:
+        cmap = ["#9A32CD", "#00EE76", "#CD0000"]  # Loss, Base, Gain
+        legend_elements = [
+            Patch(facecolor="#9A32CD", edgecolor='black', label='Loss'),
+            Patch(facecolor="#00EE76", edgecolor='black', label='Base'),
+            Patch(facecolor="#CD0000", edgecolor='black', label='Gain')
+        ]
+    elif n_colors == 5:
+        cmap = ["#9A32CD", "#D7A0E8", "#00EE76", "#F08080", "#CD0000"]  # Loss, Putative Loss, Base, Putative Gain, Gain
+        legend_elements = [
+            Patch(facecolor="#9A32CD", edgecolor='black', label='Loss'),
+            Patch(facecolor="#D7A0E8", edgecolor='black', label='Putative Loss'),
+            Patch(facecolor="#00EE76", edgecolor='black', label='Base'),
+            Patch(facecolor="#F08080", edgecolor='black', label='Putative Gain'),
+            Patch(facecolor="#CD0000", edgecolor='black', label='Gain')
+        ]
+    else:
+        raise ValueError("n_colors must be 3 or 5")
+
+    # Plot per chromosome
     for i, (seq, group) in enumerate(res.groupby('seq', observed=True)):
-        ax = fig.add_subplot(gs[0, i+1])  # Add a subplot to the GridSpec
+        ax = fig.add_subplot(gs[0, i+1])
         data_filtered = group.drop(columns=["seq", "start", "end"])
-        
-        sns.heatmap(data_filtered.T, ax=ax, cmap=["#9A32CD", "#00EE76", "#CD0000"], vmin=0, vmax=2, cbar=False)
+        sns.heatmap(data_filtered.T, ax=ax, cmap=cmap, vmin=0, vmax=2, cbar=False)
         ax.set_title(seq, rotation=30)
-        
-        #Remove the axes ticks
         ax.set_xticks([])
         ax.set_yticks([])
      
     # Add a common x-axis label
     fig.text(0.5, 0.0, 'Position in chromosome', ha='center', va='center', fontsize=12)
 
-    # Add a legend below all plots for loss, base, gain
-    legend_elements = [Patch(facecolor="#9A32CD", edgecolor='black', label='Loss'),
-                       Patch(facecolor="#00EE76", edgecolor='black', label='Base'),
-                       Patch(facecolor="#CD0000", edgecolor='black', label='Gain')]
-
-    fig.legend(handles=legend_elements, loc='lower center', ncol=3, fontsize=12, frameon=False,
+    fig.legend(handles=legend_elements, loc='lower center', ncol=len(legend_elements), fontsize=12, frameon=False,
                bbox_to_anchor=(0.5, -0.08))
 
     # Adjust layout

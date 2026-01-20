@@ -220,13 +220,16 @@ def weighted_scale_search(seg_means, seg_lengths, k_max=6, s_grid=None, median_v
     best_s = min(scores, key=scores.get)
 
     # Call resulting CN states
-    # cn_states = np.round(seg_means / best_s).astype(int)
-    # cn_states[cn_states < 0] = 0
-    # cn_states[cn_states > k_max] = k_max
-    d2 = ((seg_means[:, None] - best_s * ks[None, :]) ** 2) * state_weights[None, :]
-    cn_states = ks[np.argmin(d2, axis=1)]
+    # Watson: continuous
+    cont_cn_states = np.round(seg_means / best_s, 2)
+    cont_cn_states[cont_cn_states < 0] = 0
+    cont_cn_states[cont_cn_states > k_max] = k_max
 
-    return best_s, cn_states, scores
+    # Holmes: discrete integer
+    d2 = ((seg_means[:, None] - best_s * ks[None, :]) ** 2) * state_weights[None, :]
+    int_cn_states = ks[np.argmin(d2, axis=1)]
+
+    return best_s, cont_cn_states, int_cn_states
 
 
 def assign_gainloss_new(seq_data, cluster, s_grid=None):
@@ -264,16 +267,37 @@ def assign_gainloss_new(seq_data, cluster, s_grid=None):
     median_val = np.median(seg_means_per_bin)
 
     # run scale-factor grid search
-    best_s, cn_states, _ = weighted_scale_search(seg_means.values, seg_lengths.values, 
-                                                 s_grid=s_grid, median_val=median_val)
+    best_s, cont_cn_states, int_cn_states = weighted_scale_search(seg_means.values, seg_lengths.values, 
+                                                                        s_grid=s_grid, median_val=median_val)
 
     # cn_states is per-segment (same order as seg_mean.index)
     # seg_mean.index contains the segment labels
     seg_labels = seg_means.index.values   # unique cluster IDs
-    seg2state = dict(zip(seg_labels, cn_states))  # map from cluster -> CN state
+    seg2state_cont = dict(zip(seg_labels, cont_cn_states))
+    seg2state_int = dict(zip(seg_labels, int_cn_states))  # map from cluster -> CN state
 
     # now map each bin's cluster label to a CN state
-    bin_cn_states = np.array([seg2state[c] for c in cluster])
-    bin_cn_states = np.clip(bin_cn_states, 1, 3) - 1
+    # Holmes
+    bin_cn_int = np.array([seg2state_int[c] for c in cluster])
+    bin_cn_states_holmes = np.clip(bin_cn_int, 1, 3) - 1
 
-    return bin_cn_states, best_s, trimmed_mean_iqr(seq_data, lb=False), seg_means_per_bin
+    # Watson
+    bin_cn_cont = np.array([seg2state_cont[c] for c in cluster])
+    bin_cn_states_watson = np.where(
+        bin_cn_cont <= 1, 0,
+        np.where(bin_cn_cont >= 3, 2, 1)
+    )
+
+    # Combined output
+    bin_cn_states = np.full_like(bin_cn_states_holmes, -1.0, dtype=float)
+
+    # exact matches
+    bin_cn_states[(bin_cn_states_holmes == 0) & (bin_cn_states_watson == 0)] = 0.0
+    bin_cn_states[(bin_cn_states_holmes == 1) & (bin_cn_states_watson == 1)] = 1.0
+    bin_cn_states[(bin_cn_states_holmes == 2) & (bin_cn_states_watson == 2)] = 2.0
+
+    # mixed cases
+    bin_cn_states[(bin_cn_states_holmes == 0) & (bin_cn_states_watson == 1)] = 0.5
+    bin_cn_states[(bin_cn_states_holmes == 2) & (bin_cn_states_watson == 1)] = 1.5
+
+    return bin_cn_int, bin_cn_cont, bin_cn_states_holmes, bin_cn_states_watson, bin_cn_states, best_s
