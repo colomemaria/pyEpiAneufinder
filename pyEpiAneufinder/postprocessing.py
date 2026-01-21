@@ -7,7 +7,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 
-def split_subclones_distance(res, dist_cutoff):
+def split_subclones_distance(res, dist_cutoff, cluster_method="complete"):
     """
     Alternative function to split the dataset into subclones, based on distance
 
@@ -31,7 +31,7 @@ def split_subclones_distance(res, dist_cutoff):
     fract_deviation = dist_matrix / res.shape[0]
 
     #Calcuate the hierarchical clustering based on these
-    hc_cluster = linkage(fract_deviation, method='complete')
+    hc_cluster = linkage(fract_deviation, method=cluster_method)
 
     #Split into groups
     cl_members = fcluster(Z=hc_cluster, t=dist_cutoff, criterion='distance')
