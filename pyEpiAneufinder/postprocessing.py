@@ -7,7 +7,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 
-def split_subclones_distance(res, dist_cutoff, cluster_method="complete"):
+def split_subclones_distance(res, dist_cutoff, cluster_method):
     """
     Alternative function to split the dataset into subclones, based on distance
 
@@ -45,7 +45,8 @@ def split_subclones_distance(res, dist_cutoff, cluster_method="complete"):
 
 
 def cnv_imputation_subclones(res, dist_cutoff,
-                            min_clone_size=10, frac_min_occ=0.9):
+                            min_clone_size=10, frac_min_occ=0.9,
+                            cluster_method="complete"):
     
     """
     Imputation strategy to reduce noise of CNV calls by replacing CNV status
@@ -64,7 +65,7 @@ def cnv_imputation_subclones(res, dist_cutoff,
     """
 
     #Get clone information
-    clones = split_subclones_distance(res,dist_cutoff)
+    clones = split_subclones_distance(res,dist_cutoff,cluster_method)
 
     #Remove position information (only CNVs kept)
     data_matrix = res.drop(columns=["seq","start","end"])
