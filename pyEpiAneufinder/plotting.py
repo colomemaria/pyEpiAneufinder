@@ -23,9 +23,30 @@ def karyo_gainloss (res, outdir, title_karyo, n_colors=5):
     A filtered version of the input Pandas data frame
     
     """
+    #Check required columns
+    required_columns = ['seq', 'start', 'end']
+    for col in required_columns:
+        if col not in res.columns:
+            raise KeyError(f"Missing required columns in DataFrame: {col}")
+        
+    #Check if the DataFrame is empty
+    if res.shape[0] == 0:
+        raise ValueError("Input DataFrame is empty")
 
     #Remove position information (only CNVs kept)
     data_matrix = res.drop(columns=["seq","start","end"])
+
+    # Check that the dataframe is not empty after dropping
+    if data_matrix.shape[1] == 0 or data_matrix.shape[0] == 0:
+        raise ValueError("Data matrix is empty after dropping position columns")
+
+    # Check that all CNV values are numeric
+    if not all(pd.api.types.is_numeric_dtype(data_matrix[col]) for col in data_matrix.columns):
+        raise ValueError("All CNV columns must be numeric")
+    
+    # data_matrix already contains only CNV columns
+    if not ((data_matrix == 0) | (data_matrix == 2)).any().any():
+        raise ValueError("No gain or loss detected in the CNV data")
 
     #Calculate pairwise distances between cells
     dist_matrix = pdist(data_matrix.T,metric="euclidean")
@@ -97,3 +118,5 @@ def karyo_gainloss (res, outdir, title_karyo, n_colors=5):
     plt.suptitle(title_karyo)
     plt.tight_layout()
     plt.savefig(outdir+"Karyogram.png", dpi=300, bbox_inches='tight')
+
+    return res
