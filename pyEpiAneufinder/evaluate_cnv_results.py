@@ -9,14 +9,19 @@ import seaborn as sns
 
 import anndata as ad
 
-def split_subclones(res, num_clust):
+def split_subclones(res, split_val, criterion="maxclust",
+                    dist_metric="euclidean", linkage_method="ward"):
     """
     Function to split the CNV results into subclones based on hierarchical clustering
 
     Parameters
     ----------
     res: Results from pyEpiAneufinder main function (as pandas data frame)
-    num_clust: Number of clones to split the data
+    split_val: Either number of clones to split the data (for criterion = maxclust) or cluster distance (for criterion = distanc)
+    criterion: Either maxclust (splitting tree into a certain number of clones defined in split_val) or
+               distance (splitting tree based on a certain distance defined in split_val)
+    dist_metric: Distance metric between CNV profile (e.g. euclidean, cityblock)
+    linkage_method: Linkage method for hierarchical clustering (e.g. Ward, complete, average)
 
     Output
     ------
@@ -27,13 +32,16 @@ def split_subclones(res, num_clust):
     data_matrix = res.drop(columns=["seq","start","end"])
 
     #Calculate pairwise distances between cells
-    dist_matrix = pdist(data_matrix.T,metric="euclidean")
+    dist_matrix = pdist(data_matrix.T,metric=dist_metric)
+
+    #Normalize the distance by the number of bins (=> mean absolute error) 
+    fract_deviation = dist_matrix / res.shape[0]
 
     #Hierarchical clustering
-    hc_cluster = linkage(dist_matrix, method='ward')
+    hc_cluster = linkage(fract_deviation, method=linkage_method)
 
     #Split into groups
-    cl_members = fcluster(Z=hc_cluster, t=num_clust, criterion='maxclust')
+    cl_members = fcluster(Z=hc_cluster, t=split_val, criterion=criterion)
     
     clones = pd.DataFrame({"barcode":data_matrix.columns.values,
                            "subclone":cl_members})

@@ -7,42 +7,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
 
-def split_subclones_distance(res, dist_cutoff, cluster_method):
-    """
-    Alternative function to split the dataset into subclones, based on distance
-
-    Parameters
-    ----------
-    res: Results from pyEpiAneufinder main function (as pandas data frame)
-    dist_cutoff: Maximum distance inside the cluster
-
-    Output
-    ------
-    Pandas data frame with two columns of barcode and subclone group
-    """
-
-    #Remove position information (only CNVs kept)
-    data_matrix = res.drop(columns=["seq","start","end"])
-
-    #Calculate pairwise distances between cells
-    dist_matrix = pdist(data_matrix.T,metric="cityblock")
-
-    #Normalize the distance by the number of bins (=> mean absolute error) 
-    fract_deviation = dist_matrix / res.shape[0]
-
-    #Calcuate the hierarchical clustering based on these
-    hc_cluster = linkage(fract_deviation, method=cluster_method)
-
-    #Split into groups
-    cl_members = fcluster(Z=hc_cluster, t=dist_cutoff, criterion='distance')
-        
-    clones = pd.DataFrame({"barcode":data_matrix.columns.values,
-                        "subclone":cl_members})
-
-    return clones
-
-
-
+from .evaluate_cnv_results import split_subclones
 
 def cnv_imputation_subclones(res, dist_cutoff,
                             min_clone_size=10, frac_min_occ=0.9,
@@ -65,7 +30,8 @@ def cnv_imputation_subclones(res, dist_cutoff,
     """
 
     #Get clone information
-    clones = split_subclones_distance(res,dist_cutoff,cluster_method)
+    clones = split_subclones(res, dist_cutoff, criterion="distance",
+                    dist_metric="cityblock", linkage_method=cluster_method)
 
     #Remove position information (only CNVs kept)
     data_matrix = res.drop(columns=["seq","start","end"])
