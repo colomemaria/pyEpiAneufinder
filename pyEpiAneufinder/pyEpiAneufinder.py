@@ -412,7 +412,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     if(plotKaryo):
         start = time.perf_counter()
 
-        karyo_gainloss(somies_ad, outdir+"/outs/", title_karyo)
+        karyo_gainloss(somies_ad, outdir+"/outs/Karyogram.png", title=title_karyo)
 
         end = time.perf_counter()
         execution_time = (end - start)/60
