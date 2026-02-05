@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import anndata as ad
-import scipy as sp
 from scipy.sparse import csr_matrix
 import time 
 import json
@@ -15,23 +14,29 @@ from importlib.metadata import version
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
-from .get_breakpoints import fast_getbp, recursive_getbp_df
-from .assign_somy import assign_gainloss, assign_gainloss_new
+from .get_breakpoints import recursive_getbp_df
+from .assign_somy import assign_gainloss_new
 from .plotting import karyo_gainloss
 
 def _process_recursive_bp_worker(args):
     cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha = args
     bp = recursive_getbp_df(data_slice_chr, data_slice_cell, k=k, n_permutations=n_permutations, alpha=alpha)
-    # cell, chrom, data_slice, k, n_permutations, alpha = args
-    # bp = recursive_getbp_df(data_slice, k=k, n_permutations=n_permutations, alpha=alpha)
     bp["cell"], bp["seq"] = cell, chrom
     return bp
+
+def iqr_filter(x, k=1.5):
+    q1 = np.percentile(x, 25)
+    q3 = np.percentile(x, 75)
+    iqr = q3 - q1
+    lower = q1 - k * iqr
+    upper = q3 + k * iqr
+    return (x > lower) & (x < upper)
 
 def epiAneufinder(fragment_file, outdir, genome_file,
                   blacklist, windowSize,
                   exclude=None, sort_fragment=True, GC=True,
                   title_karyo=None, minFrags = 20000,
-                  threshold_cells_nbins=0.25,
+                  threshold_cells_nbins=0.35,
                   threshold_blacklist_bins=0.85,
                   ncores=1, k=2, 
                   n_permutations=1000, alpha=0.001,
@@ -44,25 +49,24 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     """
     Main function of epiAneufinder
 
-    Runs all the necessary steps based on an input file, namely creating a binned count matrix,
-    filtering, GC correction, estimation of breakpoints, pruning, annotation of segments and plotting.
+    Runs all the necessary steps to infer copy number states; namely, creating a binned count matrix,
+    filtering, GC correction, genome segmentation, copy number annotation of segments and plotting.
 
     Parameters
     ----------
     fragment_file: Folder with bam files, a fragments.tsv/bed file or a folder with a count matrix (required files: matrix.mtx(.gz), barcodes.tsv(.gz) and peaks.bed(.gz))
-    mode: String. Choose between "Watson" (conservative) and "Holmes" (explorative)
     outdir: Path to output directory
+    genome_file: Fasta file containing the reference genome
     blacklist: Bed file with blacklisted regions
     windowSize: Size of the window (Reccomended for sparse data - 1e6)
-    genome: String containing name of BS.genome object. Necessary for GC correction. Default: "BSgenome.Hsapiens.UCSC.hg38"
     exclude: String of chromosomes to exclude. Example: c('chrX','chrY','chrM')
+    sort_fragment: Boolean variable. Whether to sort the fragment file by cell (can take a while). Default: True
+    GC: Boolean variable. Whether to perform GC correction. Default: True
     title_karyo: String. Title of the output karyogram
     minFrags: Integer. Minimum number of reads for a cell to pass. Only required for fragments.tsv file. Default: 20000
-    GC: Boolean variable. Whether to perform GC correction
-    sort_fragment: Boolean variable. Whether to sort the fragment file by cell (can take a while). Default: True
-    threshold_cells_nbins: Keep only cells that have more than a certain percentage of non-zero bins
+    threshold_cells_nbins: Keep only cells that have more than a certain percentage of non-zero bins. Default: 0.35
     threshold_blacklist_bins: Blacklist a bin if more than the given ratio of cells have zero reads in the bin. Default: 0.85
-    ncores: Number of cores for parallelization. Default: 4
+    ncores: Number of cores for parallelization. Default: 1
     k: Integer. Find 2^k segments per chromosome
     plotKaryo: Boolean variable. Whether the final karyogram is plotted at the end
     resume : Boolean variable. Whether to resume the analysis if the intermmediate/output files already exist
@@ -73,28 +77,28 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
     Output
     ------
-    csv file with predictions, png file with karyogram (if plotKaryo=True) as well as intermediate results
+    Compressed tsv files with predictions, png file with karyogram (if plotKaryo=True) as well as intermediate results
     
     """
 
     print(f"Running pyEpiAneufinder version {version('pyEpiAneufinder')}")
 
-    #Check that a possible p-value was chosen dependent on the number of permutations
+    # Check whether valid p-value was chosen, which depends on the number of permutations
     if (1/(n_permutations+1))>alpha:
         raise ValueError(f"Chosen significance thresold of {alpha} is too low for \n"
                          f"the chosen number of permutations {n_permutations} which allow \n"
                          f"calculation of p-values up to {1/(n_permutations+1)}")
 
-    #Create the output dir if it doesn't exist yet
+    # Create the output directory if it doesn't exist yet
     os.makedirs(outdir, exist_ok=True)
 
-    #Load the barcodes to exclude if provided
+    # Load the barcodes to exclude if provided
     barcodes_to_remove = None
     if remove_barcodes is not None:
         barcodes_to_remove = pd.read_csv(remove_barcodes, header=None)[0].tolist()
         print(f"Loaded {len(barcodes_to_remove)} barcodes to exclude.")
     
-    #Load the barcodes to include if provided
+    # Load the barcodes to include if provided
     if selected_cells is not None:
         selected_cells = pd.read_csv(selected_cells, header=None)[0].tolist()
         print(f"Loaded {len(selected_cells)} barcodes to include.")
@@ -104,13 +108,13 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # Create windows from genome file (with GC content per window)
     # ----------------------------------------------------------------------- 
 
-    print("Binning the genome")
+    print("Binning the genome...")
 
     start = time.perf_counter()
 
     windows_file_name = outdir+"/binned_genome.csv"
     
-    if resume and os.path.exists(windows_file_name): #resume if the windows already exist
+    if resume and os.path.exists(windows_file_name): # Resume if windows already exist
         print(f"Resuming: {windows_file_name} already exists. Skipping calculation.")
     else:
         windows = make_windows(genome_file, blacklist, windowSize, exclude)
@@ -122,8 +126,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
     matrix_file = outdir+"/count_matrix.h5ad"
     if resume and os.path.exists(matrix_file):
-        print(f"Resuming: {matrix_file} already exists. Skipping calculation.")
-        counts = ad.read_h5ad(matrix_file)
+        print(f"Resuming: {matrix_file} already exists. Skipping calculation.") # Resume if count matrix already exists
+        counts = ad.read_h5ad(matrix_file) # Read count matrix that already exists
     else:
         if cellRangerInput:
             print("Using cell ranger input. No fragment file needed.")
@@ -134,7 +138,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             # ----------------------------------------------------------------------- 
 
             if sort_fragment:
-                print("Sort the fragment file")
+                print("Sort the fragment file...")
                 start = time.perf_counter()
                 output_file = outdir + "/fragment_file.sortedbycell.tsv.gz"
                 cmd = f"zgrep -v '^#' {fragment_file} | sort -k4,4 -k1,1 -k2,2n --parallel={ncores} | gzip > {output_file}"
@@ -143,7 +147,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                 execution_time = (end - start)/60
                 print(f"Successfully sort fragment file. Execution time: {execution_time:.2f} mins")
             else:
-                print("Taking fragment file correctly sorted by the user after barcode and position")
+                print("Taking fragment file correctly sorted by the user after barcode and position.")
                 output_file = fragment_file
 
 
@@ -151,7 +155,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             # Read the fragment file and generate a count matrix from it
             # ----------------------------------------------------------------------- 
 
-            print("Reading the sorted fragment file")
+            print("Reading the sorted fragment file...")
 
             start = time.perf_counter()
 
@@ -169,77 +173,91 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # Filtering cells
         # -----------------------------------------------------------------------
 
-        #Exclude bins that have no signal in most cells
+        # Exclude bins without any signal in most cells
+        print(f"Number of cells and windows prior to filtering: {counts.shape}")
         nonzero_bins = counts.X.getnnz(axis=0)
-        filter_bins = nonzero_bins >= (1- threshold_blacklist_bins) * counts.X.shape[0]
+        filter_bins = nonzero_bins >= (1- threshold_blacklist_bins) * counts.shape[0]
         counts = counts[:,filter_bins].copy()
-        print(f"Filtering windows without enough coverage, {counts.X.shape[1]} windows remain.")
+        print(f"Filtering windows without enough coverage, {counts.shape[1]} windows remain.")
 
-        #Check the parameter for non-zero bins (too low will cause problems with somy assignment)
+        # Check the input for non-zero bins (too low will cause problems with somy assignment)
         if threshold_cells_nbins < 0.25:
-            warnings.warn("Warning: Setting threshold_cells_nbins < 0.25 will can cause problems during the somy assignment (as the 75% quantile needs to be >0).")
+            warnings.warn("Warning: Setting threshold_cells_nbins < 0.25 will can cause problems during the somy assignment (as the 75th quantile needs to be > 0).")
 
-        #Exclude cells that have no signal in most bins
+        # Exclude cells without any signal in most bins
         nonzero_cell = counts.X.getnnz(axis=1)
-        filter_cells = nonzero_cell > threshold_cells_nbins * counts.X.shape[1]
+        filter_cells = nonzero_cell > threshold_cells_nbins * counts.shape[1]
         counts = counts[filter_cells,:].copy()
-        print(f"Filtering cells without enough coverage, {counts.X.shape[0]} cells remain.")
+        print(f"Filtering cells without enough coverage, {counts.shape[0]} cells remain.")
 
         # ----------------------------------------------------------------------- 
         # GC correction
         # ----------------------------------------------------------------------- 
 
-        print("GC correction")
+        print("Perform GC correction...")
 
         start = time.perf_counter()
         if not GC:
-            print("Skipping GC correction as per user request")
+            print("Skipping GC correction as per user request.")
             counts.write(matrix_file, compression="gzip")
         else:
-            #Perform GC correction per cell
+            # Perform GC correction per cell
             all_loess_rows = []
             for i in range(counts.X.shape[0]):
                 counts_per_window=counts.X[i,:].toarray().flatten()
                 loess_res = get_loess_smoothed(counts_per_window, counts.var.GC.to_numpy())
                 correction = counts_per_window.mean()/loess_res #(loess_res + .000000000001)
                 loess_norm_row = counts_per_window * correction
-                #Round to integer again (speeds runtime significantly!)
+                # Round to integer again (speeds runtime significantly!)
                 all_loess_rows.append(np.rint(loess_norm_row).astype(int))
 
-
-            #Keep the raw data
-            counts.layers["raw"]=counts.X
-
-            #Save the GC normalized matrix in X
+            # Save GC corrected expression matrix
             expr_matrix = np.vstack(all_loess_rows)
-            #Remove GC artefacts
+            # Set negative GC artefacts to 0
             expr_matrix[expr_matrix < 0] = 0
-            expr_matrix[expr_matrix > (expr_matrix.mean() + 100*expr_matrix.std())] = 0
+
+            # Keep the raw data
+            counts.layers["raw"] = counts.X.copy()
+
+            # QC metrics for outlier removal
+            # 1) total counts per cell
+            total_counts = np.array(counts.layers["raw"].sum(axis=1)).flatten()
+            # 2) std of raw counts per cell
+            raw_std = counts.layers["raw"].toarray().std(axis=1)
+
+            # Create masks for filtering
+            mask_std = iqr_filter(raw_std, k=1.5)
+            mask_total = iqr_filter(total_counts, k=1.5)
+            cell_mask = mask_std & mask_total
+
+            # Apply filters
+            counts = counts[cell_mask].copy()
+            expr_matrix = expr_matrix[cell_mask]
             # Normalize counts to 100000
             expr_matrix = expr_matrix / ((expr_matrix.sum(axis=1) / 1e5)[:, np.newaxis])
-            # Save and convert to sparse
+
+            # Convert GC normalized matrix to sparse and save in X
             counts.X = csr_matrix(expr_matrix)
-            # Remove cells with high standard deviation
-            counts = counts[counts.X.toarray().std(axis=1) < 10].copy()
 
             end = time.perf_counter()
             execution_time = (end - start)/60
+            print(f"Filtering cells with low complexity, {counts.shape[0]} cells remain.")
             print(f"Successfully performed GC correction. Execution time: {execution_time:.2f} mins")
 
-            #Save the count matrix
+            # Save the count matrix
             counts.write(matrix_file, compression="gzip")
     
     # ----------------------------------------------------------------------- 
     # Estimating break points
     # ----------------------------------------------------------------------- 
 
-    #Assumption: count matrix as anndata object (might need to be changed later)
+    # Assumption: count matrix as anndata object (might need to be changed later)
     breakpoints_file=outdir+"/breakpoints.csv"
-    if resume and os.path.exists(breakpoints_file): #resume if the breakpoints already exist
+    if resume and os.path.exists(breakpoints_file): # Resume if breakpoints file already exists
         print(f"Resuming: {breakpoints_file} already exists. Skipping calculation.")
-        cluster_ad=pd.read_csv(breakpoints_file, index_col=0) #Read the breakpoints file that already exists
+        cluster_ad=pd.read_csv(breakpoints_file, index_col=0) # Read breakpoints file that already exists
     else:
-        print("Calculating distance AD using fast_getbp")
+        print("Find breakpoints for genome segmentation using Anderson-Darling distance...")
 
         start = time.perf_counter()
         tasks = []
@@ -250,8 +268,6 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             cell = counts.obs.cellID.iloc[i]
             for chrom in unique_chroms:
                 mask = counts.var["seq"] == chrom
-                # data_slice = counts.X[i, mask.values].toarray().flatten()
-                # tasks.append((cell, chrom, data_slice, k, n_permutations, alpha))
                 data_slice_chr = counts.X[i, mask.values].toarray().flatten()
                 data_slice_cell = counts.X[i, :].toarray().flatten()
                 tasks.append((cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha))
@@ -259,7 +275,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
         available_cpus = os.cpu_count()
 
-        #Throw exception if ncores is larger than available CPUs 
+        # Throw exception if ncores is larger than available CPUs 
         if ncores > available_cpus:
             raise ValueError(
                 f"Requested {ncores} cores, but only {available_cpus} CPUs are available."
@@ -267,16 +283,19 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # Parallel CPU-bound processing
         results = []
         with ProcessPoolExecutor(max_workers=ncores) as executor:
-            # futures = [executor.submit(_process_bp_worker, t) for t in tasks]
             futures = [executor.submit(_process_recursive_bp_worker, t) for t in tasks]
             for fut in as_completed(futures):
                 results.append(fut.result())
 
-        #Collect results
+        # Collect results
+        results = [
+            df for df in results
+            if not df.empty and not df.isna().all().all()
+        ]
         cluster_ad = pd.concat(results, ignore_index=True)
         print("Elapsed:", time.perf_counter() - start)
 
-        #Save breakpoints
+        # Save breakpoints
         cluster_ad.to_csv(breakpoints_file)
 
         end = time.perf_counter()
@@ -290,21 +309,21 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     breakpoints = cluster_ad.copy()
     os.makedirs(outdir+"/outs", exist_ok=True)
     results_file=outdir+"/outs/result_table.tsv.gz"
-    if resume and os.path.exists(results_file): #resume if the results file already exists
+    if resume and os.path.exists(results_file): # Resume if results file already exists
         print(f"Resuming: {results_file} already exists. Skipping calculation.")
-        somies_ad=pd.read_csv(results_file, index_col=0, sep="\t") #Read the sommies file that already exists
+        somies_ad=pd.read_csv(results_file, index_col=0, sep="\t") # Read results file that already exists
     else:
-        print("Assign somies")
+        print("Assign copy number states...")
 
         start = time.perf_counter()
 
-        #Number of bins per chromosome
+        # Number of bins per chromosome
         num_bins_chrom = counts.var["seq"].value_counts(sort=False)
         unique_chroms = counts.var["seq"].unique()
 
-        #Convert breakpoints into segment annotations per cell
+        # Convert breakpoints into segment annotations for each cell
         cluster_file = outdir+'/clusters.json'
-        if resume and os.path.exists(cluster_file): #resume if file already exists 
+        if resume and os.path.exists(cluster_file): # Resume if file already exists 
             with open(outdir + '/clusters.json', 'r') as f:
                 clusters = json.load(f)
         else: 
@@ -316,33 +335,33 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             
                 for chrom in unique_chroms:
 
-                    #Extract all breakpoints from this chromosome
+                    # Extract all breakpoints from this chromosome
                     bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
                                                         (breakpoints.cell==cell) ]
                 
-                    #If no breakpoints exist for this chromsome, save all windows as one segment
+                    # If no breakpoints exist for this chromsome, save all windows as one segment
                     if bp_chrom.empty:
                         cluster_list += [counter] * num_bins_chrom[chrom]
                     else:
                     
-                        #Otherwise calculate the length of each segment (in the right order)
+                        # Otherwise, calculate the length of each segment (in right order)
                         bp_chrom = sorted([0,num_bins_chrom[chrom]]+bp_chrom.tolist())
                         segment_size = np.diff(bp_chrom)
                     
-                        #Add for each segment the indices
+                        # Add the indices for each segment
                         cluster_list += np.repeat(range(counter,len(segment_size)+counter),segment_size).tolist()
                 
-                    #Decide which index the next segment should get
+                    # Decide which index the next segment gets
                     counter = max(cluster_list)+1
         
-                #Save all indices as a new dictonary entry
+                # Save all indices as new dictonary entry
                 clusters[cell]=cluster_list
 
             # Save clusters
             with open(outdir+'/clusters.json', 'w') as f:
                 json.dump(clusters, f)
 
-        # Impute CNV status for each cell
+        # Impute copy number status for each cell
         print("Watson proceeds with due caution--as always--while Holmes investigates beyond the obvious.")
         results_int = {}
         results_cont = {}
@@ -362,7 +381,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             results[cell] = list(combined_states)
             scaling_factors[cell] = s
 
-        #Need to reset the index before concatenating with results
+        # Need to reset the index before concatenating with results
         annot = counts.var[["seq", "start", "end"]]
         annot.reset_index(drop=True, inplace=True)
 
@@ -377,7 +396,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         execution_time = (end - start)/60
         print(f"Successfully identified somies. Execution time: {execution_time:.2f} mins")
 
-        #Save the results as csv files
+        # Save the results as csv files
         int_ad.to_csv(outdir+"/outs/integer_states.tsv.gz", sep="\t", index=True, compression="gzip")
         cont_ad.to_csv(outdir+"/outs/continuous_scores.tsv.gz", sep="\t", index=True, compression="gzip")
         somies_holmes_ad.to_csv(outdir+"/outs/result_table_holmes.tsv.gz", sep="\t", index=True, compression="gzip")
@@ -410,6 +429,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # ----------------------------------------------------------------------- 
 
     if(plotKaryo):
+        print("Plort karyogram...")
         start = time.perf_counter()
 
         karyo_gainloss(somies_ad, outdir+"/outs/Karyogram.png", title=title_karyo)

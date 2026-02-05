@@ -93,7 +93,7 @@ def seq_dist_ad_old(seq_data, minsize=1):
     
     """
     
-    #Create the list of breakpoints to test (with a stepsize of minsize)
+    # Create the list of breakpoints to test (with a stepsize of minsize)
     bp1 = np.arange(0, len(seq_data), minsize)
 
     # Loop over break points

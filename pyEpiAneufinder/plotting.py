@@ -13,24 +13,25 @@ import seaborn as sns
 def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5, 
                    linkage_method='ward', dist_metric='euclidean'):
     """
-    Function to plot the final karyogram with support for categorical, integer, or continuous CNV states
+    Function to plot karyogram with support for categorical, integer or continuous CN states
 
     Parameters
     ----------
-    res: Pandas data frame with position information in the first three columns (seq, start, end), 
-         followed by the CNV status of each cell
-    outdir: Path to saved karyogram image
+    res: Pandas DataFrame with position information in first three columns (seq, start, end), 
+         followed by the CN status of each cell
+    outdir: Path to saved .png image
     title: Plot title
     state_type: Type of states to plot. Options: 'categorical', 'integer', 'continuous'
     n_states: Number of categorical states (3 or 5). Only used when state_type='categorical'
-    linkage_method: Linkage method for hierarchical clustering (default: 'ward')
-    dist_metric: Distance metric for clustering (default: 'euclidean')
+    linkage_method: Linkage method for hierarchical clustering. Default: 'ward'
+    dist_metric: Distance metric for clustering. Default: 'euclidean'
 
-    Output
-    ------
-    A filtered version of the input Pandas data frame
-    
+    Returns
+    -------
+    A filtered version of the input Pandas DataFrame
+
     """
+
     # Validate state_type parameter
     valid_state_types = ['categorical', 'integer', 'continuous']
     if state_type not in valid_state_types:
@@ -42,18 +43,18 @@ def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5,
         if col not in res.columns:
             raise KeyError(f"Missing required column in DataFrame: {col}")
         
-    # Check if the DataFrame is empty
+    # Check if DataFrame is empty
     if res.shape[0] == 0:
         raise ValueError("Input DataFrame is empty")
 
     # Remove position information (only CNVs kept)
     data_matrix = res.drop(columns=["seq", "start", "end"])
 
-    # Check that the dataframe is not empty after dropping
+    # Check that DataFrame is not empty after dropping position columns
     if data_matrix.shape[1] == 0 or data_matrix.shape[0] == 0:
         raise ValueError("Data matrix is empty after dropping position columns")
 
-    # Check that all CNV values are numeric
+    # Check whether all CNV values are numeric
     if not all(pd.api.types.is_numeric_dtype(data_matrix[col]) for col in data_matrix.columns):
         raise ValueError("All CNV columns must be numeric")
     
@@ -61,9 +62,11 @@ def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5,
     if state_type == 'categorical':
         if n_states not in [3, 5]:
             raise ValueError("n_states must be 3 or 5 for categorical state_type")
-        # For categorical, check if we have the expected discrete values
-        if not ((data_matrix == 0) | (data_matrix == 1) | (data_matrix == 2)).any().any():
-            raise ValueError("No gain or loss detected in the CNV data")
+        # For categorical, check if we have expected values
+        valid_values = {3: {0, 1, 2}, 5: {0, 0.5, 1, 1.5, 2}}[n_states]
+        unique_values = set(np.unique(data_matrix.values))
+        if not unique_values.issubset(valid_values):
+            raise ValueError(f"Data contains values outside the expected set for {n_states} states: {valid_values}")
     
     # Calculate pairwise distances between cells
     dist_matrix = pdist(data_matrix.T, metric=dist_metric)
@@ -85,7 +88,7 @@ def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5,
     # Add the dendrogram as the first column
     ax = fig.add_subplot(gs[0, 0])
     dendro = dendrogram(Z, orientation="left", link_color_func=lambda k: 'darkgrey', ax=ax)
-    # Remove the axes
+    # Remove axes
     ax.axis('off')
 
     # Reorder the data matrix correctly
@@ -114,9 +117,9 @@ def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5,
         vmin, vmax = 0, 2
         show_cbar = False
         legend_elements_to_show = legend_elements
-        
+
+    # Blue-white-red colormap centered at 2 for integer and continuous states 
     elif state_type in ['integer', 'continuous']:
-        # Blue-white-red colormap centered at 2
         base_cmap = sns.diverging_palette(240, 10, s=80, l=55, as_cmap=True)
         shifted_cmap = shiftedColorMap(
             base_cmap,
@@ -184,19 +187,17 @@ def shiftedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap'):
     
     Input
     -----
-      cmap : The matplotlib colormap to be altered
+      cmap : Matplotlib colormap to be altered
       start : Offset from lowest point in the colormap's range.
-          Defaults to 0.0 (no lower ofset). Should be between
-          0.0 and 1.0.
-      midpoint : The new center of the colormap. Defaults to 
-          0.5 (no shift). Should be between 0.0 and 1.0. In
-          general, this should be  1 - vmax/(vmax + abs(vmin))
-          For example if your data range from -15.0 to +5.0 and
-          you want the center of the colormap at 0.0, `midpoint`
-          should be set to  1 - 5/(5 + 15)) or 0.75
+          Should be between 0.0 and 1.0. Default: 0
+      midpoint : The new center of the colormap. Should be between 0.0 and 1.0. In
+          general, this should be  1 - vmax/(vmax + abs(vmin)). Default: 0.5 (no shift)
       stop : Offset from highets point in the colormap's range.
-          Defaults to 1.0 (no upper ofset). Should be between
-          0.0 and 1.0.
+          Should be between 0.0 and 1.0. Default: 1.0
+
+    Returns
+    -------
+      newcmap : The new shifted colormap
     '''
     cdict = {
         'red': [],
@@ -205,10 +206,10 @@ def shiftedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap'):
         'alpha': []
     }
       
-    # regular index to compute the colors
+    # Regular index to compute the colors
     reg_index = np.linspace(start, stop, 257)
 
-    # shifted index to match the data
+    # Shifted index to match the data
     shift_index = np.hstack([
         np.linspace(0.0, midpoint, 128, endpoint=False), 
         np.linspace(midpoint, 1.0, 129, endpoint=True)
