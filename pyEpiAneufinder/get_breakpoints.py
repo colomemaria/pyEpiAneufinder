@@ -170,4 +170,152 @@ def recursive_getbp_df(seq_data, seq_data_cell, k=3, n_permutations=500, alpha=0
     return pd.DataFrame(results, columns=["breakpoint", "ad_dist", "p_value_local", "p_value_global"])
 
 
+
+def getbp(seq_data, minsize=1, k=3, minsizeCNV=5):
+    """
+    Function to identify breakpoints (recursive research)
+
+    Parameters
+    ----------
+    seq_data: array-like
+        Sequential data (counts per bin)
+    minsize: int
+        Resolution at the level of ins. Default: 1. Setting it to higher numbers runs the algorithm faster at the cost of resolution
+    k: int
+        Find 2^k segments per chromosome
+    minsizeCNV: int
+        Number of consecutive bins to constitute a possible CNV
+
+    Returns
+    ------
+    A Pandas DataFrame with all breakpoint and the AD distance at this breakpoint
+    
+    """
+            
+    # Save the position and the distance of the breakpoint
+    bp = []
+    dist_bp = []
+
+    for i in range(k):
+    
+        # Split the sequence accordingly at the breakpoints
+        seq_k_data = np.split(seq_data,sorted(bp))
+
+        total_position = 0
+        for segement in seq_k_data:
+        
+            # Process only segements with length > 1
+            if(len(segement)>1):
+                # Calculate the AD distance separately for each breakpoint and identify the maximum
+                dist_vector = seq_dist_ad_old(segement,minsize=minsize)
+                
+                # Get the position of the maximum AD distance (in the total vector seq_data)
+                bp_pos_shifted = ((np.argmax(dist_vector)+1)*minsize)-1
+                
+                # Because of the minsize the shift might sometimes be outside the segment length 
+                #(set it to the length in the this case)
+                if bp_pos_shifted >= len(segement):
+                    bp_pos_shifted = len(segement) - 1
+                
+                # Check whether it is overlapping with any other segment (works only if bp is not empty)
+                if bp:
+                    bp_neighbors = np.concatenate([np.arange(x - minsizeCNV, x + minsizeCNV + 1) for x in bp])
+                    if not ((bp_pos_shifted+total_position) in  bp_neighbors):
+                        bp.append(bp_pos_shifted + total_position)
+                        # Save also the maximum AD distance
+                        dist_bp.append(max(dist_vector))
+                else:
+                    bp.append(bp_pos_shifted + total_position)
+                    # Save also the maximum AD distance
+                    dist_bp.append(max(dist_vector))
+
+
+            # Add the length of this segement as total counter
+            total_position += len(segement)
+            
+    # Remove breakpoints at the beginning or the end of the segement that are too short
+    bp_filtered = []
+    dist_bp_filtered = []
+    # Make this distinction to be exactly the same as in the R version of epiAneufinder
+    if minsizeCNV > 0: 
+        for i in range(len(bp)):
+            if (bp[i] > 0 + minsizeCNV-1) & (bp[i]< (len(seq_data)-minsizeCNV-1)) :
+                bp_filtered.append(bp[i])
+                dist_bp_filtered.append(dist_bp[i])
+    else:
+        for i in range(len(bp)):
+            if (bp[i] > 0) & (bp[i]< (len(seq_data)-1)) :
+                bp_filtered.append(bp[i])
+                dist_bp_filtered.append(dist_bp[i])
+ 
+    return(pd.DataFrame({"breakpoint": np.array(bp_filtered, dtype="int64"),
+                         "ad_dist": np.array(dist_bp_filtered, dtype="float64")}))
+
+
+
+def fast_getbp(seq_data, minsize=1, k=3, minsizeCNV=5):
+    """
+    Function to identify breakpoints (recursive research) with a faster implementation
+
+    Parameters
+    ----------
+    seq_data: array-like
+        Sequential data (counts per bin)
+    minsize: int
+        Resolution at the level of ins. Default: 1. Setting it to higher numbers runs the algorithm faster at the cost of resolution
+    k: int
+        Find 2^k segments per chromosome
+    minsizeCNV: int
+        Number of consecutive bins to constitute a possible CNV
+
+    Returns
+    ------
+    A Pandas DataFrame with all breakpoint and the AD distance at this breakpoint
+    
+    """
+
+    # Save the position and the distance of the breakpoint
+    bp = []
+    dist_bp = []
+
+    for _ in range(k):
+       
+        segments = np.split(seq_data, sorted(bp))  # Segment the sequence at current breakpoints
+
+        # Compute start index of each segment in original array
+        seg_starts = np.cumsum([0] + [len(seg) for seg in segments[:-1]]) #
+
+        for segment, seg_start in zip(segments, seg_starts):
+            if len(segment) <= 1:
+                continue
+
+            # Compute AD distances for current segment
+            dist_vector = np.array(seq_dist_ad_old(segment, minsize=minsize))
+            if dist_vector.size == 0:
+                continue
+            # Get index of max AD distance
+            bp_local = ((np.argmax(dist_vector) + 1) * minsize) - 1
+            bp_local = min(bp_local, len(segment) - 1)  # using min to avoiddoing it manually
+            bp_global = bp_local + seg_start
+
+            # Enforce minsizeCNV spacing from other breakpoints
+            if bp:
+                # OLD: bp_neighbors = np.concatenate([np.arange(x - minsizeCNV, x + minsizeCNV + 1) for x in bp])
+                neighbors = set(np.concatenate([np.arange(b - minsizeCNV, b + minsizeCNV + 1) for b in bp]))
+                if bp_global not in neighbors:
+                    bp.append(bp_global)
+                    dist_bp.append(np.max(dist_vector))
+            else:
+                bp.append(bp_global)
+                dist_bp.append(np.max(dist_vector))
+            
+    bp_arr = np.array(bp, dtype=int)
+    dist_arr = np.array(dist_bp, dtype=float)
+
+    if minsizeCNV > 0:
+        valid_mask = (bp_arr >= minsizeCNV) & (bp_arr <= len(seq_data) - minsizeCNV - 1)
+    else:
+        valid_mask = (bp_arr >= 1) & (bp_arr <= len(seq_data) - 2)
+
+    return pd.DataFrame({"breakpoint": bp_arr[valid_mask],"ad_dist": dist_arr[valid_mask]})
     
