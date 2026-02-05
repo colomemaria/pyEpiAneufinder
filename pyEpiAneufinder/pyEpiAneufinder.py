@@ -178,7 +178,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         nonzero_bins = counts.X.getnnz(axis=0)
         filter_bins = nonzero_bins >= (1- threshold_blacklist_bins) * counts.shape[0]
         counts = counts[:,filter_bins].copy()
-        print(f"Filtering windows without enough coverage, {counts.shape[1]} windows remain.")
+        print(f"Filtering windows without sufficient coverage, {counts.shape[1]} windows remain.")
 
         # Check the input for non-zero bins (too low will cause problems with somy assignment)
         if threshold_cells_nbins < 0.25:
@@ -188,7 +188,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         nonzero_cell = counts.X.getnnz(axis=1)
         filter_cells = nonzero_cell > threshold_cells_nbins * counts.shape[1]
         counts = counts[filter_cells,:].copy()
-        print(f"Filtering cells without enough coverage, {counts.shape[0]} cells remain.")
+        print(f"Filtering cells without sufficient coverage, {counts.shape[0]} cells remain.")
 
         # ----------------------------------------------------------------------- 
         # GC correction
@@ -429,7 +429,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # ----------------------------------------------------------------------- 
 
     if(plotKaryo):
-        print("Plort karyogram...")
+        print("Plot karyogram...")
         start = time.perf_counter()
 
         karyo_gainloss(somies_ad, outdir+"/outs/Karyogram.png", title=title_karyo)
