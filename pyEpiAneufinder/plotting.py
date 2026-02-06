@@ -8,9 +8,11 @@ import matplotlib.gridspec as gridspec
 from matplotlib.patches import Patch
 import matplotlib.colors as mcolors
 import seaborn as sns
+from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 
-def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5, 
+def karyo_gainloss(res, outdir, title, annot_dt=None,
+                   state_type='categorical', n_states=5, 
                    linkage_method='ward', dist_metric='euclidean'):
     """
     Function to plot karyogram with support for categorical, integer or continuous CN states
@@ -21,6 +23,8 @@ def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5,
          followed by the CN status of each cell
     outdir: Path to saved .png image
     title: Plot title
+    annot_dt: Optional Pandas DataFrame with annotation information for each cell. 
+        Index must match cell barcodes in res. Must contain column 'annot' with categorical annotations.
     state_type: Type of states to plot. Options: 'categorical', 'integer', 'continuous'
     n_states: Number of categorical states (3 or 5). Only used when state_type='categorical'
     linkage_method: Linkage method for hierarchical clustering. Default: 'ward'
@@ -32,153 +36,197 @@ def karyo_gainloss(res, outdir, title, state_type='categorical', n_states=5,
 
     """
 
-    # Validate state_type parameter
+    # ----------------------------
+    # Input validation
+    # ----------------------------
     valid_state_types = ['categorical', 'integer', 'continuous']
     if state_type not in valid_state_types:
         raise ValueError(f"state_type must be one of {valid_state_types}")
-    
-    # Check required columns
-    required_columns = ['seq', 'start', 'end']
-    for col in required_columns:
+
+    for col in ['seq', 'start', 'end']:
         if col not in res.columns:
-            raise KeyError(f"Missing required column in DataFrame: {col}")
-        
-    # Check if DataFrame is empty
+            raise KeyError(f"Missing required column: {col}")
+
     if res.shape[0] == 0:
         raise ValueError("Input DataFrame is empty")
 
-    # Remove position information (only CNVs kept)
     data_matrix = res.drop(columns=["seq", "start", "end"])
 
-    # Check that DataFrame is not empty after dropping position columns
-    if data_matrix.shape[1] == 0 or data_matrix.shape[0] == 0:
+    if data_matrix.shape[0] == 0 or data_matrix.shape[1] == 0:
         raise ValueError("Data matrix is empty after dropping position columns")
 
-    # Check whether all CNV values are numeric
     if not all(pd.api.types.is_numeric_dtype(data_matrix[col]) for col in data_matrix.columns):
         raise ValueError("All CNV columns must be numeric")
-    
-    # Validate data based on state_type
+
     if state_type == 'categorical':
         if n_states not in [3, 5]:
             raise ValueError("n_states must be 3 or 5 for categorical state_type")
-        # For categorical, check if we have expected values
         valid_values = {3: {0, 1, 2}, 5: {0, 0.5, 1, 1.5, 2}}[n_states]
-        unique_values = set(np.unique(data_matrix.values))
-        if not unique_values.issubset(valid_values):
-            raise ValueError(f"Data contains values outside the expected set for {n_states} states: {valid_values}")
-    
-    # Calculate pairwise distances between cells
-    dist_matrix = pdist(data_matrix.T, metric=dist_metric)
+        if not set(np.unique(data_matrix.values)).issubset(valid_values):
+            raise ValueError("Unexpected categorical CNV values detected")
 
-    # Hierarchical clustering
+    # ----------------------------
+    # Clustering
+    # ----------------------------
+    dist_matrix = pdist(data_matrix.T, metric=dist_metric)
     Z = linkage(dist_matrix, method=linkage_method)
 
-    # Get the relative percentage of entries per chromosome
+    # Chromosome layout
     chr_num_bins = res["seq"].value_counts(sort=False)
-    perc_chr = [chr / sum(chr_num_bins) for chr in chr_num_bins]
-
-    # Make sure the chromosomes are sorted in the correct order in the plots
+    perc_chr = [c / sum(chr_num_bins) for c in chr_num_bins]
     res['seq'] = pd.Categorical(res['seq'], categories=chr_num_bins.index, ordered=True)
 
-    # Create a figure with a custom GridSpec layout
+    # ----------------------------
+    # Figure & GridSpec
+    # ----------------------------
     fig = plt.figure(figsize=(22, 8))
-    gs = gridspec.GridSpec(1, len(perc_chr)+1, width_ratios=[2]+[20 * p for p in perc_chr])
 
-    # Add the dendrogram as the first column
+    if annot_dt is None:
+        gs = gridspec.GridSpec(
+            1, len(perc_chr) + 1,
+            width_ratios=[2] + [20 * p for p in perc_chr]
+        )
+    else:
+        # sanity check
+        if set(data_matrix.columns).difference(annot_dt.index):
+            raise ValueError("Annotation DataFrame does not match cell barcodes")
+
+        gs = gridspec.GridSpec(
+            1, len(perc_chr) + 2,
+            width_ratios=[2] + [20 * p for p in perc_chr] + [0.5]
+        )
+
+    # ----------------------------
+    # Dendrogram
+    # ----------------------------
     ax = fig.add_subplot(gs[0, 0])
-    dendro = dendrogram(Z, orientation="left", link_color_func=lambda k: 'darkgrey', ax=ax)
-    # Remove axes
+    dendro = dendrogram(Z, orientation="left",
+                        link_color_func=lambda k: 'darkgrey', ax=ax)
     ax.axis('off')
 
-    # Reorder the data matrix correctly
-    leaf_order = dendro['leaves']  # Extract the order of the leaves as a list
-    leaf_order = [l + 3 for l in leaf_order[::-1]]  # Reverse the order and add + 3 (first three columns)
+    leaf_order = dendro['leaves']
+    leaf_order = [l + 3 for l in leaf_order[::-1]]
     res = res.iloc[:, [0, 1, 2] + leaf_order]
 
-    # Define colors, colorbar, and legend based on state_type
+    if annot_dt is not None:
+        barcodes_order = data_matrix.columns[dendro['leaves'][::-1]]
+        annot_dt = annot_dt.loc[barcodes_order].reset_index()
+
+    # ----------------------------
+    # Colormaps
+    # ----------------------------
     if state_type == 'categorical':
         if n_states == 3:
-            cmap = ["#9A32CD", "#00EE76", "#CD0000"]  # Loss, Base, Gain
+            cmap = ["#9A32CD", "#00EE76", "#CD0000"]
             legend_elements = [
-                Patch(facecolor="#9A32CD", edgecolor='black', label='Loss'),
-                Patch(facecolor="#00EE76", edgecolor='black', label='Base'),
-                Patch(facecolor="#CD0000", edgecolor='black', label='Gain')
+                Patch(facecolor="#9A32CD", label="Loss"),
+                Patch(facecolor="#00EE76", label="Base"),
+                Patch(facecolor="#CD0000", label="Gain")
             ]
-        elif n_states == 5:
+        else:
             cmap = ["#9A32CD", "#D7A0E8", "#00EE76", "#F08080", "#CD0000"]
             legend_elements = [
-                Patch(facecolor="#9A32CD", edgecolor='black', label='Loss'),
-                Patch(facecolor="#D7A0E8", edgecolor='black', label='Putative Loss'),
-                Patch(facecolor="#00EE76", edgecolor='black', label='Base'),
-                Patch(facecolor="#F08080", edgecolor='black', label='Putative Gain'),
-                Patch(facecolor="#CD0000", edgecolor='black', label='Gain')
+                Patch(facecolor="#9A32CD", label="Loss"),
+                Patch(facecolor="#D7A0E8", label="Putative Loss"),
+                Patch(facecolor="#00EE76", label="Base"),
+                Patch(facecolor="#F08080", label="Putative Gain"),
+                Patch(facecolor="#CD0000", label="Gain")
             ]
         vmin, vmax = 0, 2
         show_cbar = False
-        legend_elements_to_show = legend_elements
 
-    # Blue-white-red colormap centered at 2 for integer and continuous states 
-    elif state_type in ['integer', 'continuous']:
+    else:
         base_cmap = sns.diverging_palette(240, 10, s=80, l=55, as_cmap=True)
-        shifted_cmap = shiftedColorMap(
-            base_cmap,
-            midpoint=1/3,
-            name='bwr_shifted_2'
-        )
+        shifted_cmap = shiftedColorMap(base_cmap, midpoint=1/3)
         show_cbar = True
-        legend_elements_to_show = None
         cbar_label = 'Integer state' if state_type == 'integer' else 'Continuous score'
 
-    # Plot per chromosome
+    # ----------------------------
+    # Per-chromosome heatmaps
+    # ----------------------------
     chromosome_groups = list(res.groupby('seq', observed=True))
     n_chromosomes = len(chromosome_groups)
 
     for i, (seq, group) in enumerate(chromosome_groups):
-        ax = fig.add_subplot(gs[0, i+1])
+        ax = fig.add_subplot(gs[0, i + 1])
         data_filtered = group.drop(columns=["seq", "start", "end"])
-        
-        # Create heatmap
+
         if state_type == 'categorical':
-            sns.heatmap(data_filtered.T, ax=ax, cmap=cmap, vmin=vmin, vmax=vmax, cbar=False)
+            sns.heatmap(data_filtered.T, ax=ax, cmap=cmap,
+                        vmin=vmin, vmax=vmax, cbar=False)
         else:
-            # For integer and continuous, use a diverging colormap with colorbar
             sns.heatmap(data_filtered.T, ax=ax, cmap=shifted_cmap,
                         vmin=0, vmax=6, 
-                        cbar=show_cbar and i == n_chromosomes-1,
-                        cbar_kws={'label': cbar_label, 'pad': 0.5, 
-                                  'fraction': 0.25, 'aspect': 30,
-                                  'spacing': 'proportional'})
-            
-            # Customize the colorbar if it was just created
-            if show_cbar and i == n_chromosomes - 1:
-                cbar = ax.collections[0].colorbar
-                cbar.set_ticks([0, 2, 6])
-                cbar.set_ticklabels(['0', '2', '6'])
-        
+                        cbar=False)
+
         ax.set_title(seq, rotation=30)
         ax.set_xticks([])
         ax.set_yticks([])
-     
-    # Add a common x-axis label
+
+    # ----------------------------
+    # Annotation bar
+    # ----------------------------
+    if annot_dt is not None:
+        annot_numeric = annot_dt["annot"].cat.codes.values.reshape(-1, 1)
+        labels_annot = annot_dt["annot"].cat.categories
+
+        palette_annot = sns.color_palette("Set2", len(labels_annot))
+        ax_annot = fig.add_subplot(gs[0, -1])
+
+        sns.heatmap(annot_numeric, ax=ax_annot,
+                    cmap=palette_annot, cbar=False,
+                    xticklabels=False, yticklabels=False)
+
+        ax_annot.set_title("Label", rotation=30)
+
+        annot_legend = [
+            Patch(facecolor=palette_annot[i], label=str(label))
+            for i, label in enumerate(labels_annot)
+        ]
+
+        fig.legend(handles=annot_legend, loc='lower right',
+                   ncol=len(annot_legend), frameon=False,
+                   bbox_to_anchor=(1.0, -0.06), fontsize=12)
+
+    # ----------------------------
+    # Legends & layout
+    # ----------------------------
     fig.text(0.5, 0.0, 'Position in chromosome', ha='center', va='center', fontsize=12)
-
-    # Add legend for categorical states
+    
     if state_type == 'categorical':
-        fig.legend(handles=legend_elements_to_show, loc='lower center', 
-                  ncol=len(legend_elements_to_show), fontsize=12, frameon=False,
-                  bbox_to_anchor=(0.5, -0.08))
-        plt.subplots_adjust(bottom=0.2)
-    else:
-        # For numeric states, adjust for colorbar
-        plt.subplots_adjust(bottom=0.15, right=0.95)
+        fig.legend(handles=legend_elements, loc='upper right', 
+                   ncol=len(legend_elements), frameon=False,
+                   bbox_to_anchor=(1.0, 1.05), fontsize=12)
+    if state_type in ['integer', 'continuous']:
+        # Create inset axis in figure coordinates (legend-like)
+        cax = inset_axes(
+            ax,
+            width="10%",
+            height="1%",
+            loc="upper right",
+            bbox_to_anchor=(0, 0.06, 1, 1),
+            bbox_transform=fig.transFigure,
+            borderpad=0
+        )
 
-    # Show the plot
+        sm = plt.cm.ScalarMappable(
+            cmap=shifted_cmap,
+            norm=plt.Normalize(vmin=0, vmax=6)
+        )
+        sm.set_array([])
+
+        cbar = fig.colorbar(sm, cax=cax, orientation="horizontal")
+        cbar.set_label(cbar_label, fontsize=12)
+        cbar.ax.tick_params(labelsize=12)
+        cbar.set_ticks([0, 2, 6])
+        cbar.set_ticklabels(['0', '2', '6'])
+
     plt.suptitle(title)
     plt.tight_layout()
     plt.savefig(outdir, dpi=300, bbox_inches='tight')
 
     return res
+
 
 
 def shiftedColorMap(cmap, start=0, midpoint=0.5, stop=1.0, name='shiftedcmap'):
