@@ -174,9 +174,10 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # -----------------------------------------------------------------------
 
         # Exclude bins without any signal in most cells
+        print("Apply QC filters...")
         print(f"Number of cells and windows prior to filtering: {counts.shape}")
         nonzero_bins = counts.X.getnnz(axis=0)
-        filter_bins = nonzero_bins >= (1- threshold_blacklist_bins) * counts.shape[0]
+        filter_bins = nonzero_bins >= (1 - threshold_blacklist_bins) * counts.shape[0]
         counts = counts[:,filter_bins].copy()
         print(f"Filtering windows without sufficient coverage, {counts.shape[1]} windows remain.")
 
@@ -187,8 +188,22 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         # Exclude cells without any signal in most bins
         nonzero_cell = counts.X.getnnz(axis=1)
         filter_cells = nonzero_cell > threshold_cells_nbins * counts.shape[1]
-        counts = counts[filter_cells,:].copy()
+        counts = counts[filter_cells].copy()
         print(f"Filtering cells without sufficient coverage, {counts.shape[0]} cells remain.")
+
+        # Exclude low-complexity cells, i.e., cells with unusually high #counts or std
+        # QC metrics for outlier removal
+        # 1) total counts per cell
+        total_counts = np.array(counts.X.sum(axis=1)).flatten()
+        # 2) std of raw counts per cell
+        raw_std = counts.X.toarray().std(axis=1)
+        # Create masks for filtering
+        mask_total = iqr_filter(total_counts, k=1.5)
+        mask_std = iqr_filter(raw_std, k=1.5)
+        filter_cells = mask_std & mask_total
+        # Apply filter
+        counts = counts[filter_cells].copy()
+        print(f"Filtering cells with low complexity, {counts.shape[0]} cells remain.")
 
         # ----------------------------------------------------------------------- 
         # GC correction
@@ -211,31 +226,14 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                 # Round to integer again (speeds runtime significantly!)
                 all_loess_rows.append(np.rint(loess_norm_row).astype(int))
 
+            # Save raw data
+            counts.layers["raw"] = counts.X.copy()
             # Save GC corrected expression matrix
             expr_matrix = np.vstack(all_loess_rows)
             # Set negative GC artefacts to 0
             expr_matrix[expr_matrix < 0] = 0
-
-            # Keep the raw data
-            counts.layers["raw"] = counts.X.copy()
-
-            # QC metrics for outlier removal
-            # 1) total counts per cell
-            total_counts = np.array(counts.layers["raw"].sum(axis=1)).flatten()
-            # 2) std of raw counts per cell
-            raw_std = counts.layers["raw"].toarray().std(axis=1)
-
-            # Create masks for filtering
-            mask_std = iqr_filter(raw_std, k=1.5)
-            mask_total = iqr_filter(total_counts, k=1.5)
-            cell_mask = mask_std & mask_total
-
-            # Apply filters
-            counts = counts[cell_mask].copy()
-            expr_matrix = expr_matrix[cell_mask]
-            # Normalize counts to 100000
+            # Normalize total counts per cell to 1e5
             expr_matrix = expr_matrix / ((expr_matrix.sum(axis=1) / 1e5)[:, np.newaxis])
-
             # Convert GC normalized matrix to sparse and save in X
             counts.X = csr_matrix(expr_matrix)
 
