@@ -268,7 +268,7 @@ def assign_gainloss_new(seq_data, cluster, s_grid=None):
     median_val = np.median(seg_means_per_bin)
 
     # Run scale-factor grid search
-    best_s, cont_cn_scores, int_cn_states = weighted_scale_search(seg_means.values, seg_lengths.value,
+    best_s, cont_cn_scores, int_cn_states = weighted_scale_search(seg_means.values, seg_lengths.values,
                                                                   median_val, s_grid=s_grid)
 
     # cn_states is per-segment (same order as seg_mean.index)
