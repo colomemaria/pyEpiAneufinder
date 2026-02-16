@@ -8,10 +8,10 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed #heavy CPU
 from concurrent.futures import ThreadPoolExecutor, as_completed #heavy IO
 from tqdm import tqdm
+from importlib.metadata import version
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
-from .get_breakpoints import getbp
 from .get_breakpoints import fast_getbp
 from .assign_somy import threshold_dist_values, assign_gainloss_v1
 from .plotting import karyo_gainloss
@@ -71,6 +71,9 @@ def epiAneufinder_v1(fragment_file, outdir, genome_file,
     csv file with predictions, png file with karyogram (if plotKaryo=True) as well as intermediate results
     
     """
+
+    print(f"Running pyEpiAneufinder version {version('pyEpiAneufinder')} with the initial algorithm!")
+    print(f"Running pyEpiAneufinder with {ncores} cores!")
 
     #Create the output dir if it doesn't exist yet
     os.makedirs(outdir, exist_ok=True)

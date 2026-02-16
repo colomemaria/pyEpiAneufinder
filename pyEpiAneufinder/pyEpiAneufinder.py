@@ -81,7 +81,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     
     """
 
-    print(f"Running pyEpiAneufinder version {version('pyEpiAneufinder')}")
+    print(f"Running pyEpiAneufinder version {version('pyEpiAneufinder')} with the Watson and Holmes algorithm!")
+    print(f"Running pyEpiAneufinder with {ncores} cores!")
 
     # Check whether valid p-value was chosen, which depends on the number of permutations
     if (1/(n_permutations+1))>alpha:
