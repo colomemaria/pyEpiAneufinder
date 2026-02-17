@@ -166,7 +166,7 @@ def karyo_gainloss(res, outdir, title=None, annot_dt=None,
     if annot_dt is not None:
 
         #Convert annot column automatically to category if not done
-        if annot_dt["annot"].dtype.name == "category":
+        if annot_dt["annot"].dtype.name != "category":
             print("Automatically converting column \"annot\" to categorical.")
             annot_dt["annot"] = annot_dt["annot"].astype("category")
 
