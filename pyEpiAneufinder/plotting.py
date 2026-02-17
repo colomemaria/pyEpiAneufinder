@@ -11,7 +11,7 @@ import seaborn as sns
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
 
-def karyo_gainloss(res, outdir, title, annot_dt=None,
+def karyo_gainloss(res, outdir, title=None, annot_dt=None,
                    state_type='categorical', n_states=5, 
                    linkage_method='ward', dist_metric='euclidean'):
     """
@@ -133,19 +133,16 @@ def karyo_gainloss(res, outdir, title, annot_dt=None,
                 Patch(facecolor="#CD0000", label="Gain")
             ]
         vmin, vmax = 0, 2
-        show_cbar = False
 
     else:
         base_cmap = sns.diverging_palette(240, 10, s=80, l=55, as_cmap=True)
         shifted_cmap = shiftedColorMap(base_cmap, midpoint=1/3)
-        show_cbar = True
         cbar_label = 'Integer state' if state_type == 'integer' else 'Continuous score'
 
     # ----------------------------
     # Per-chromosome heatmaps
     # ----------------------------
     chromosome_groups = list(res.groupby('seq', observed=True))
-    n_chromosomes = len(chromosome_groups)
 
     for i, (seq, group) in enumerate(chromosome_groups):
         ax = fig.add_subplot(gs[0, i + 1])
@@ -167,6 +164,12 @@ def karyo_gainloss(res, outdir, title, annot_dt=None,
     # Annotation bar
     # ----------------------------
     if annot_dt is not None:
+
+        #Convert annot column automatically to category if not done
+        if annot_dt["annot"].dtype.name == "category":
+            print("Automatically converting column \"annot\" to categorical.")
+            annot_dt["annot"] = annot_dt["annot"].astype("category")
+
         annot_numeric = annot_dt["annot"].cat.codes.values.reshape(-1, 1)
         labels_annot = annot_dt["annot"].cat.categories
 
@@ -224,8 +227,6 @@ def karyo_gainloss(res, outdir, title, annot_dt=None,
     plt.suptitle(title)
     plt.tight_layout()
     plt.savefig(outdir, dpi=300, bbox_inches='tight')
-
-    return res
 
 
 
