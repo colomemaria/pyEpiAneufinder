@@ -208,6 +208,7 @@ def epiAneufinder_v1(fragment_file, outdir, genome_file,
 
     #Assumption: count matrix as anndata object (might need to be changed later)
     breakpoints_file=outdir+"/breakpoints_unfiltered.csv"
+    unique_chroms = counts.var["seq"].unique()
     if resume and os.path.exists(breakpoints_file): #resume if the breakpoints already exist
         print(f"Resuming: {breakpoints_file} already exists. Skipping calculation.")
         cluster_ad=pd.read_csv(breakpoints_file, index_col=0) #Read the breakpoints file that already exists
@@ -216,7 +217,6 @@ def epiAneufinder_v1(fragment_file, outdir, genome_file,
 
         start = time.perf_counter()
         tasks = []
-        unique_chroms = counts.var["seq"].unique()
 
         # Pre-slice all the needed data ahead of time
         for i in range(counts.shape[0]):
@@ -377,7 +377,11 @@ def epiAneufinder_v1(fragment_file, outdir, genome_file,
         else:
             start = time.perf_counter()
 
-            karyo_gainloss(somies_ad,outdir+"/",title_karyo)
+            karyo_gainloss(somies_ad, 
+                           n_states=3, 
+                           outdir=outdir+"/Karyogram.png", 
+                           title=title_karyo
+            )
 
             end = time.perf_counter()
             execution_time = (end - start)/60
