@@ -371,18 +371,14 @@ def epiAneufinder_v1(fragment_file, outdir, genome_file,
     # ----------------------------------------------------------------------- 
 
     if(plotKaryo):
-        if resume and os.path.exists(results_file): #resume if the results file already exist
-            print(f"Resuming: {results_file} already exists. Skipping calculation, plotting karyogram.")
-            karyo_gainloss(somies_ad,outdir+"/",title_karyo)
-        else:
-            start = time.perf_counter()
+        start = time.perf_counter()
 
-            karyo_gainloss(somies_ad, 
-                           n_states=3, 
-                           outdir=outdir+"/Karyogram.png", 
-                           title=title_karyo
-            )
+        karyo_gainloss(somies_ad, 
+                        n_states=3, 
+                        outdir=outdir+"/Karyogram.png", 
+                        title=title_karyo
+        )
 
-            end = time.perf_counter()
-            execution_time = (end - start)/60
-            print(f"Successfully plotted karyogram. Execution time: {execution_time:.2f} mins")
+        end = time.perf_counter()
+        execution_time = (end - start)/60
+        print(f"Successfully plotted karyogram. Execution time: {execution_time:.2f} mins")
