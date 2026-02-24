@@ -86,6 +86,9 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     print(f"Running pyEpiAneufinder version {version('pyEpiAneufinder')} with the Watson and Holmes algorithm!")
     print(f"Running pyEpiAneufinder with {ncores} cores!")
 
+    # Create the output directory if it doesn't exist yet
+    os.makedirs(outdir, exist_ok=True)
+
     # Save input parameters to a text file for reproducibility and debugging
     # Capture parameters
     bound = inspect.signature(epiAneufinder).bind(
@@ -106,13 +109,10 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     bound.apply_defaults()
     params = bound.arguments
 
-    # Create the output directory if it doesn't exist yet
-    os.makedirs(outdir, exist_ok=True)
-
     param_file = os.path.join(outdir, "parameter_configuration.txt")
 
     with open(param_file, "w") as f:
-        f.write(f"epiAneufinder run\n")
+        f.write(f"pyEpiAneufinder run\n")
         f.write(f"Timestamp: {datetime.now()}\n\n")
         for key, value in params.items():
             f.write(f"{key}: {repr(value)}\n")

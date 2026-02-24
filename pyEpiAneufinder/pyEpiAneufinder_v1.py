@@ -5,6 +5,8 @@ from scipy.sparse import csr_matrix
 import time 
 import os
 import subprocess
+import inspect
+from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed #heavy CPU
 from concurrent.futures import ThreadPoolExecutor, as_completed #heavy IO
 from tqdm import tqdm
@@ -77,6 +79,34 @@ def epiAneufinder_v1(fragment_file, outdir, genome_file,
 
     #Create the output dir if it doesn't exist yet
     os.makedirs(outdir, exist_ok=True)
+
+    # Save input parameters to a text file for reproducibility and debugging
+    # Capture parameters
+    bound = inspect.signature(epiAneufinder_v1).bind(
+        fragment_file, outdir, genome_file,
+        blacklist, windowSize,
+        exclude, sort_fragment, GC,
+        uq, lq, title_karyo, minFrags,
+        threshold_cells_nbins,
+        threshold_blacklist_bins,
+        ncores, minsize, k,
+        minsizeCNV, plotKaryo,
+        resume, cellRangerInput,
+        remove_barcodes,
+        selected_cells
+    )
+    bound.apply_defaults()
+    params = bound.arguments
+
+    param_file = os.path.join(outdir, "parameter_configuration.txt")
+
+    with open(param_file, "w") as f:
+        f.write(f"pyEpiAneufinder_v1 run\n")
+        f.write(f"Timestamp: {datetime.now()}\n\n")
+        for key, value in params.items():
+            f.write(f"{key}: {repr(value)}\n")
+
+    print("Parameter configuration saved to:", param_file)
 
     #Load the barcodes to exclude if provided
     barcodes_to_remove = None
