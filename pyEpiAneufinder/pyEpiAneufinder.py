@@ -6,6 +6,8 @@ import time
 import json
 import os
 import subprocess
+import inspect
+from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed #heavy CPU
 from concurrent.futures import ThreadPoolExecutor, as_completed #heavy IO
 from tqdm import tqdm
@@ -84,14 +86,44 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     print(f"Running pyEpiAneufinder version {version('pyEpiAneufinder')} with the Watson and Holmes algorithm!")
     print(f"Running pyEpiAneufinder with {ncores} cores!")
 
+    # Save input parameters to a text file for reproducibility and debugging
+    # Capture parameters
+    bound = inspect.signature(epiAneufinder).bind(
+        fragment_file, outdir, genome_file,
+        blacklist, windowSize,
+        exclude, sort_fragment, GC,
+        title_karyo, minFrags,
+        threshold_cells_nbins,
+        threshold_blacklist_bins,
+        ncores, k,
+        n_permutations, alpha,
+        plotKaryo,
+        resume, cellRangerInput,
+        keep_sorted_fragfile,
+        remove_barcodes,
+        selected_cells
+    )
+    bound.apply_defaults()
+    params = bound.arguments
+
+    # Create the output directory if it doesn't exist yet
+    os.makedirs(outdir, exist_ok=True)
+
+    param_file = os.path.join(outdir, "parameter_configuration.txt")
+
+    with open(param_file, "w") as f:
+        f.write(f"epiAneufinder run\n")
+        f.write(f"Timestamp: {datetime.now()}\n\n")
+        for key, value in params.items():
+            f.write(f"{key}: {repr(value)}\n")
+
+    print("Parameter configuration saved to:", param_file)
+
     # Check whether valid p-value was chosen, which depends on the number of permutations
     if (1/(n_permutations+1))>alpha:
         raise ValueError(f"Chosen significance thresold of {alpha} is too low for \n"
                          f"the chosen number of permutations {n_permutations} which allow \n"
                          f"calculation of p-values up to {1/(n_permutations+1)}")
-
-    # Create the output directory if it doesn't exist yet
-    os.makedirs(outdir, exist_ok=True)
 
     # Load the barcodes to exclude if provided
     barcodes_to_remove = None
