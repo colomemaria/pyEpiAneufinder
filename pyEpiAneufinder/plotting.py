@@ -1,11 +1,13 @@
 import pandas as pd
 import numpy as np
+import anndata as ad
 from scipy.spatial.distance import pdist
 from scipy.cluster.hierarchy import linkage, dendrogram
 
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.patches import Patch
+import matplotlib.patches as patches
 import matplotlib.colors as mcolors
 import seaborn as sns
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
@@ -227,6 +229,269 @@ def karyo_gainloss(res, outdir, title=None, annot_dt=None,
     plt.suptitle(title)
     plt.tight_layout()
     plt.savefig(outdir, dpi=300, bbox_inches='tight')
+
+
+
+def plot_single_cell_profile(outdir, cell_name, plot_path, mode=None):
+    """
+    Function to visualize the count distribution (GC corrected) per somy for one selected cell
+
+    Parameters
+    ----------
+    outdir: Directory containing results from pyEpiAneufinder's main function
+    cell_name: Barcode of selected cell
+    plot_path: Path to saved .png plot
+    mode: Choose from "holmes" or "watson". If mode=None, use 5-state combined output.
+
+    Returns
+    ------
+    Collection of distribution plots
+    """
+
+    # Read both result table and count matrix
+    if mode:
+        res = pd.read_csv(outdir + f"/outs/result_table_{mode}.tsv.gz", index_col=0, sep="\t")
+    else:
+        res = pd.read_csv(outdir + f"/outs/result_table.tsv.gz", index_col=0, sep="\t")
+    counts = ad.read(outdir + "/count_matrix.h5ad")
+
+    # Check that the cell name is found in the data frame
+    if not (cell_name in res.columns):
+        raise ValueError(f"Cell barcode {cell_name} not in the result data frame!")
+
+    # Collect data
+    plot_data = pd.DataFrame({"chr": res["seq"],
+                              "gc_counts": counts.X[counts.obs.cellID == cell_name].toarray().flatten(),
+                              "somy": res[cell_name]})
+    
+    # Remove extreme quantiles (1% and 99.9%)
+    # plot_data = plot_data[(plot_data.gc_counts > plot_data.gc_counts.quantile(0.01)) &
+    #                       (plot_data.gc_counts < plot_data.gc_counts.quantile(0.999))]
+    
+    # Get a numeric column to position each bin within the genome
+    plot_data["pos"] = range(len(plot_data))
+
+    # Convert into text
+    if mode:
+        plot_data["somy_text"] = plot_data.somy.map({0: "loss",
+                                                     1: "base",
+                                                     2: "gain"})
+    else:
+        plot_data["somy_text"] = plot_data.somy.map({0: "loss",
+                                                     0.5: "putative loss",
+                                                     1: "base",
+                                                     1.5: "putative gain",
+                                                     2: "gain"})
+
+    # Add a smoothed mean line as additional estimation
+    plot_data["counts_smooth"] = plot_data["gc_counts"].rolling(window=200, center=True).mean()
+
+    # Create a density plot over the somies
+    if mode:
+        custom_palette = {"loss": "#9A32CD", "base": "#00EE76", "gain": "#CD0000"}
+    else:
+        custom_palette = {"loss": "#9A32CD", 
+                          "putative loss": "#D7A0E8", 
+                          "base": "#00EE76", 
+                          "putative gain": "#F08080", 
+                          "gain": "#CD0000"}
+
+    # Group data by chromosome and get counts (number of points)
+    grouped = plot_data.groupby("chr")
+    chromosomes = plot_data.chr.unique()
+    counts = [len(grouped.get_group(chr)) for chr in chromosomes]
+
+    # Get dimensions for the subplots
+    relative_size = [c / sum(counts) * 30 for c in counts]
+    total_max = plot_data["gc_counts"].max()
+    total_min = plot_data["gc_counts"].min()
+
+    # --------------------------------------------------------------------------------------------------
+    # Create plot (overall three parts)
+    # --------------------------------------------------------------------------------------------------
+    fig = plt.figure(figsize=(max(sum(relative_size), 12), 12))
+    outer_gs = gridspec.GridSpec(2, 1, height_ratios=[2, 3], hspace=0.3)
+
+    top_gs = outer_gs[0].subgridspec(1, 2, width_ratios=[3, 1], wspace=0.3)
+
+    # --------------------------------------------------------------------------------------------------
+    # Density plot of the somy counts
+    # --------------------------------------------------------------------------------------------------
+
+    # Remark: different bandwidth and kernel than R function
+    ax_kde = fig.add_subplot(top_gs[0, 0])
+    if mode:
+        sns.kdeplot(data=plot_data, x="gc_counts", hue="somy_text", 
+                common_norm=False, fill=True, bw_adjust=3,
+                hue_order=["loss", "base", "gain"],
+                palette=custom_palette, ax=ax_kde)
+    else:
+        sns.kdeplot(data=plot_data, x="gc_counts", hue="somy_text", 
+            common_norm=False, fill=True, bw_adjust=2.5,
+            hue_order=["loss", "putative loss", "base", "putative gain", "gain"],
+            palette=custom_palette, ax=ax_kde)
+
+    ax_kde.legend_.set_title("")
+    for text in ax_kde.legend_.get_texts():
+        text.set_fontsize(16)
+
+    ax_kde.tick_params(axis='both', labelsize=14)
+    ax_kde.set_xlabel("GC corrected counts per bin", fontsize=16)
+    ax_kde.set_ylabel("Density", fontsize=16)
+    ax_kde.set_title(f"{cell_name}: Library size - {len(plot_data)}", fontsize=20)
+
+    sns.despine(ax=ax_kde, top=True, right=True)
+
+    # --------------------------------------------------------------------------------------------------
+    # Summary of somy occurance
+    # --------------------------------------------------------------------------------------------------
+
+    # Estimate occurrences in pandas and put into right format
+    if mode:
+        somy_counts = plot_data['somy_text'].value_counts().reindex(['gain', 'base', 'loss'], fill_value=0)
+    else:
+        somy_counts = plot_data['somy_text'].value_counts().reindex(['gain', 'putative gain', 'base', 'putative loss', 'loss'], fill_value=0)
+
+    somy_counts_list = list(somy_counts.items())
+
+    ax_table = fig.add_subplot(top_gs[0, 1])
+    ax_table.axis("off")
+
+    table = ax_table.table(
+        cellText=somy_counts_list,
+        colLabels=["Somy", "# bins"],
+        cellLoc='left',
+        loc='upper right'
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(16)
+    table.scale(1.2, 2)
+
+    for (row, col), cell in table.get_celld().items():
+        if row == 0:  # header row
+            cell.set_text_props(weight='bold', fontsize=18)
+
+    # --------------------------------------------------------------------------------------------------
+    # Bottom panel: single continuous genome axis
+    # --------------------------------------------------------------------------------------------------
+
+    bottom_gs = outer_gs[1].subgridspec(
+        3, 1,
+        height_ratios=[0.2, 1, 1],
+        hspace=0.05
+    )
+
+    # --- Prepare chromosome bin counts ---
+    chr_bin_counts = plot_data["chr"].value_counts(sort=False)
+    chr_bin_counts = chr_bin_counts.loc[chromosomes]  # preserve order
+
+    genome_end = plot_data["pos"].max()
+
+    # --------------------------------------------------------------------------------------------------
+    # 1) Chromosome bar (top strip)
+    # --------------------------------------------------------------------------------------------------
+
+    ax_chr = fig.add_subplot(bottom_gs[0])
+
+    start = 0
+    for i, (chromosome, count) in enumerate(chr_bin_counts.items()):
+        end = start + count
+
+        color = "lightgrey" if i % 2 == 0 else "grey"
+        ax_chr.add_patch(
+            patches.Rectangle((start, 0), count, 1, color=color)
+        )
+
+        label = chromosome.replace("chr", "")
+        ax_chr.text(
+            (start + end) / 2,
+            1.4,
+            label,
+            ha="center",
+            va="center",
+            fontsize=14
+        )
+
+        start = end
+
+    ax_chr.set_xlim(0, genome_end)
+    ax_chr.set_ylim(0, 2)
+    ax_chr.axis("off")
+    ax_chr.margins(x=0)
+
+
+    # --------------------------------------------------------------------------------------------------
+    # 2) Rolling mean + raw counts
+    # --------------------------------------------------------------------------------------------------
+
+    ax_raw = fig.add_subplot(bottom_gs[1])
+
+    sns.scatterplot(
+        data=plot_data,
+        x="pos",
+        y="gc_counts",
+        color="grey",
+        edgecolor=None,
+        alpha=0.6,
+        legend=False,
+        ax=ax_raw
+    )
+
+    ax_raw.plot(
+        plot_data["pos"],
+        plot_data["counts_smooth"],
+        color="red",
+        linewidth=1
+    )
+
+    ax_raw.set_ylim(total_min, total_max)
+    ax_raw.set_xlim(0, genome_end)
+    ax_raw.tick_params(axis='y', labelsize=14)
+    ax_raw.set_ylabel("GC counts", fontsize=16)
+    ax_raw.set_xticks([])
+    ax_raw.margins(x=0)
+
+    # Add chromosome boundary lines
+    start = 0
+    for chromosome, count in chr_bin_counts.items():
+        start += count
+        ax_raw.axvline(start, color="black", linestyle="--", linewidth=0.75)
+
+
+    # --------------------------------------------------------------------------------------------------
+    # 3) Somy-colored scatter
+    # --------------------------------------------------------------------------------------------------
+
+    ax_somy = fig.add_subplot(bottom_gs[2], sharex=ax_raw)
+
+    sns.scatterplot(
+        data=plot_data,
+        x="pos",
+        y="gc_counts",
+        hue="somy_text",
+        palette=custom_palette,
+        edgecolor=None,
+        alpha=0.7,
+        legend=False,
+        ax=ax_somy
+    )
+
+    ax_somy.set_ylim(total_min, total_max)
+    ax_somy.set_xlim(0, genome_end)
+    ax_somy.tick_params(axis='y', labelsize=14)
+    ax_somy.set_ylabel("GC counts", fontsize=16)
+    ax_somy.set_xlabel("Genomic bins", fontsize=16, visible=True)
+    ax_somy.xaxis.label.set_visible(True)
+    ax_somy.margins(x=0)
+
+    # Add chromosome boundary lines
+    start = 0
+    for chromosome, count in chr_bin_counts.items():
+        start += count
+        ax_somy.axvline(start, color="black", linestyle="--", linewidth=0.75)
+    
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
 
 
 
