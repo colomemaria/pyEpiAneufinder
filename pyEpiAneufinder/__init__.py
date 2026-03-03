@@ -3,7 +3,7 @@ from .pyEpiAneufinder_v1 import epiAneufinder_v1
 from .get_breakpoints import getbp
 from .distance_statistics import dist_ad, seq_dist_ad
 from .assign_somy import threshold_dist_values, assign_gainloss
-from .plotting import karyo_gainloss
+from .plotting import karyo_gainloss, plot_single_cell_profile
 from .karyotype_metrics import compute_aneuploidy_across_sample, compute_aneuploidy_by_chr, compute_heterogeneity_across_sample, compute_heterogeneity_by_chr, compute_cnv_burden_cell
-from .evaluate_cnv_results import split_subclones, plot_single_cell_profile
+from .evaluate_cnv_results import split_subclones
 from .postprocessing import cnv_imputation_subclones
