@@ -448,6 +448,7 @@ def plot_single_cell_profile(outdir, cell_name, plot_path, mode=None):
     ax_raw.set_ylim(total_min, total_max)
     ax_raw.set_xlim(0, genome_end)
     ax_raw.tick_params(axis='y', labelsize=14)
+    ax_raw.set_xlabel("")
     ax_raw.set_ylabel("GC counts", fontsize=16)
     ax_raw.set_xticks([])
     ax_raw.margins(x=0)
