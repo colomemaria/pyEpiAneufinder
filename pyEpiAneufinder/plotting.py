@@ -253,7 +253,7 @@ def plot_single_cell_profile(outdir, cell_name, plot_path, mode=None):
         res = pd.read_csv(outdir + f"/outs/result_table_{mode}.tsv.gz", index_col=0, sep="\t")
     else:
         res = pd.read_csv(outdir + f"/outs/result_table.tsv.gz", index_col=0, sep="\t")
-    counts = ad.read(outdir + "/count_matrix.h5ad")
+    counts = ad.read_h5ad(outdir + "/count_matrix.h5ad")
 
     # Check that the cell name is found in the data frame
     if not (cell_name in res.columns):
@@ -261,7 +261,7 @@ def plot_single_cell_profile(outdir, cell_name, plot_path, mode=None):
 
     # Collect data
     plot_data = pd.DataFrame({"chr": res["seq"],
-                              "gc_counts": counts.X[counts.obs.cellID == cell_name].toarray().flatten(),
+                              "gc_counts": counts[counts.obs.cellID == cell_name].X.toarray().flatten(),
                               "somy": res[cell_name]})
     
     # Remove extreme quantiles (1% and 99.9%)
