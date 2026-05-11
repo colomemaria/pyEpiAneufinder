@@ -68,6 +68,8 @@ Maria Colome-Tatche (maria.colome@bmc.med.lmu.de)
 
 ### Version history
 
+* 0.3.7
+    * Test release of workflows after merging PR
 * 0.3.6
     * Test release for GitHub Release and PyPI publishing workflows
 * 0.1

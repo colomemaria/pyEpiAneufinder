@@ -1,4 +1,4 @@
-## pyEpiAneufinder 0.3.6
+## pyEpiAneufinder 0.3.7
 
 This release establishes the first package-ready foundation for
 `pyEpiAneufinder`.
