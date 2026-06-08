@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import anndata as ad
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, diags
 import time 
 import json
 import os
@@ -16,13 +16,64 @@ from importlib.metadata import version
 
 from .makeWindows import make_windows
 from .render_fragments import process_fragments, get_loess_smoothed, process_count_matrix
-from .get_breakpoints import recursive_getbp_df
-from .assign_somy import assign_gainloss_new
+from .get_breakpoints import recursive_getbp_df, recursive_getbp_df_save_all
+from .assign_somy import assign_gainloss_new, trimmed_mean_iqr
 from .plotting import karyo_gainloss
 
+# def _process_recursive_bp_worker(args):
+#     cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha = args
+#     bp = recursive_getbp_df(data_slice_chr, data_slice_cell, k=k, n_permutations=n_permutations, alpha=alpha)
+#     bp["cell"], bp["seq"] = cell, chrom
+#     return bp
+
+# def _process_recursive_bp_worker(args):
+#     global normalized_X, chrom_bin_idx, chrom_sampled
+
+#     i, cell, chrom, k, n_permutations, alpha_local, alpha_global = args
+
+#     idx = chrom_bin_idx[chrom]
+#     data_slice_chr_cell = normalized_X[i, idx].toarray().ravel()
+#     # data_slice_chr_sample = chrom_sampled[chrom].toarray().ravel()
+#     data_slice_chr_sample = chrom_sampled[chrom]
+
+#     # bp = recursive_getbp_df(
+#     #     data_slice_chr_cell,
+#     #     data_slice_chr_sample,
+#     #     k=k,
+#     #     n_permutations=n_permutations,
+#     #     alpha=alpha
+#     # )
+
+#     bp = recursive_getbp_df(
+#         data_slice_chr_cell,
+#         data_slice_chr_sample,
+#         k=k,
+#         n_permutations=n_permutations,
+#         alpha_local=alpha_local,
+#         alpha_global=alpha_global
+#     )
+
+#     bp["cell"], bp["seq"] = cell, chrom
+
+#     # If no breakpoint is found, add None entry
+#     # Such that if no breakpoint in any of the chromosomes are found, the cell does not just get lost
+#     if bp.empty:
+#         bp = pd.DataFrame([[None, None, None, None, cell, chrom]],
+#                           columns=["breakpoint", "ad_dist", "p_value_local", "p_value_global", "cell", "seq"])
+#     return bp
+
 def _process_recursive_bp_worker(args):
-    cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha = args
-    bp = recursive_getbp_df(data_slice_chr, data_slice_cell, k=k, n_permutations=n_permutations, alpha=alpha)
+    global normalized_X, chrom_bin_idx
+    i, cell, chrom, k, n_permutations, alpha = args
+    idx = chrom_bin_idx[chrom]
+    data_slice_chr_cell = normalized_X[i, idx].toarray().ravel()
+
+    bp = recursive_getbp_df_save_all(
+        data_slice_chr_cell,
+        k=k,
+        n_permutations=n_permutations,
+        alpha=alpha
+    )
     bp["cell"], bp["seq"] = cell, chrom
     return bp
 
@@ -41,7 +92,8 @@ def epiAneufinder(fragment_file, outdir, genome_file,
                   threshold_cells_nbins=0.35,
                   threshold_blacklist_bins=0.85,
                   ncores=1, k=2, 
-                  n_permutations=1000, alpha=0.001,
+                  n_permutations=1000, 
+                  alpha_local=0.001, alpha_global=0.001,
                   plotKaryo=True, 
                   resume=False, cellRangerInput=False,
                   keep_sorted_fragfile = False,
@@ -99,7 +151,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         threshold_cells_nbins,
         threshold_blacklist_bins,
         ncores, k,
-        n_permutations, alpha,
+        n_permutations, alpha_local, alpha_global,
         plotKaryo,
         resume, cellRangerInput,
         keep_sorted_fragfile,
@@ -120,10 +172,14 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     print("Parameter configuration saved to:", param_file)
 
     # Check whether valid p-value was chosen, which depends on the number of permutations
-    if (1/(n_permutations+1))>alpha:
-        raise ValueError(f"Chosen significance thresold of {alpha} is too low for \n"
-                         f"the chosen number of permutations {n_permutations} which allow \n"
-                         f"calculation of p-values up to {1/(n_permutations+1)}")
+    if (1/(n_permutations+1))>alpha_local:
+        raise ValueError(f"The chosen local significance thresold of {alpha_local} is too low for \n"
+                         f"the chosen number of permutations {n_permutations} which supports \n"
+                         f"the calculation of p-values >= {1/(n_permutations+1)}")
+    if (1/(n_permutations+1))>alpha_global:
+        raise ValueError(f"The chosen global significance thresold of {alpha_global} is too low for \n"
+                         f"the chosen number of permutations {n_permutations} which supports \n"
+                         f"the calculation of p-values >= {1/(n_permutations+1)}")
 
     # Load the barcodes to exclude if provided
     barcodes_to_remove = None
@@ -267,6 +323,12 @@ def epiAneufinder(fragment_file, outdir, genome_file,
             expr_matrix[expr_matrix < 0] = 0
             # Normalize total counts per cell to 1e5
             expr_matrix = expr_matrix / ((expr_matrix.sum(axis=1) / 1e5)[:, np.newaxis])
+            # Set positive GC artefacts (extreme outliers) to 0 using IQR rule
+            q1 = np.percentile(expr_matrix, 25, axis=1, keepdims=True)
+            q3 = np.percentile(expr_matrix, 75, axis=1, keepdims=True)
+            iqr = q3 - q1
+            threshold = q3 + 10 * iqr
+            expr_matrix = np.where(expr_matrix > threshold, 0, expr_matrix)
             # Convert GC normalized matrix to sparse and save in X
             counts.X = csr_matrix(expr_matrix)
 
@@ -283,48 +345,103 @@ def epiAneufinder(fragment_file, outdir, genome_file,
     # ----------------------------------------------------------------------- 
 
     # Assumption: count matrix as anndata object (might need to be changed later)
-    breakpoints_file=outdir+"/breakpoints.csv"
-    if resume and os.path.exists(breakpoints_file): # Resume if breakpoints file already exists
+    # breakpoints_file = outdir + "/breakpoints.csv"
+    breakpoints_file = outdir + "/breakpoints_all_stdd_pruned.csv"
+    if resume and os.path.exists(breakpoints_file):
         print(f"Resuming: {breakpoints_file} already exists. Skipping calculation.")
-        cluster_ad=pd.read_csv(breakpoints_file, index_col=0) # Read breakpoints file that already exists
+        cluster_ad = pd.read_csv(breakpoints_file, index_col=0)
     else:
         print("Find breakpoints for genome segmentation using Anderson-Darling distance...")
-
+    
         start = time.perf_counter()
-        tasks = []
         unique_chroms = counts.var["seq"].unique()
-
-        # Pre-slice all the needed data ahead of time
-        for i in range(counts.shape[0]):
-            cell = counts.obs.cellID.iloc[i]
-            for chrom in unique_chroms:
-                mask = counts.var["seq"] == chrom
-                data_slice_chr = counts.X[i, mask.values].toarray().flatten()
-                data_slice_cell = counts.X[i, :].toarray().flatten()
-                tasks.append((cell, chrom, data_slice_chr, data_slice_cell, k, n_permutations, alpha))
-
-
+    
+        # -------------------------
+        # Normalize counts per cell
+        # -------------------------
+    
+        X = counts.X
+        trimmed_means = np.array([
+            trimmed_mean_iqr(X[i].toarray().ravel(), lb=False)
+            for i in range(X.shape[0])
+        ])
+        trimmed_means[trimmed_means == 0] = 1
+    
+        # sparse row scaling
+        global normalized_X
+        normalized_X = diags(1 / trimmed_means) @ X
+    
+        # # -------------------------
+        # # Sample cells
+        # # -------------------------
+    
+        n_cells = normalized_X.shape[0]
+        # n_cells_for_perm_test = np.min([n_cells, n_permutations])
+        # sampled_indices = np.random.choice(
+        #     n_cells,
+        #     size=n_cells_for_perm_test,
+        #     replace=False
+        # )
+        # sampled_X = normalized_X[sampled_indices]
+    
+        # -------------------------
+        # Precompute chromosome indices
+        # -------------------------
+    
+        global chrom_bin_idx
+        chrom_bin_idx = {
+            chrom: np.where(counts.var["seq"].values == chrom)[0]
+            for chrom in unique_chroms
+        }
+    
+        # # -------------------------
+        # # Precompute sampled matrices
+        # # -------------------------
+    
+        # global chrom_sampled
+        # chrom_sampled = {
+        #     chrom: sampled_X[:, idx].toarray()
+        #     for chrom, idx in chrom_bin_idx.items()
+        # }
+    
+        # -------------------------
+        # Build lightweight tasks
+        # -------------------------
+    
+        tasks = [
+            # (i, counts.obs.cellID.iloc[i], chrom, k, n_permutations, alpha_local, alpha_global)
+            (i, counts.obs.cellID.iloc[i], chrom, k, n_permutations, alpha_local)
+            for i in range(n_cells)
+            for chrom in unique_chroms
+        ]
+        
+        # -------------------------
+        # CPU check
+        # -------------------------
+    
         available_cpus = os.cpu_count()
-
-        # Throw exception if ncores is larger than available CPUs 
         if ncores > available_cpus:
             raise ValueError(
                 f"Requested {ncores} cores, but only {available_cpus} CPUs are available."
             )
-        # Parallel CPU-bound processing
-        results = []
+    
+        # -------------------------
+        # Parallel execution
+        # -------------------------
+    
         with ProcessPoolExecutor(max_workers=ncores) as executor:
-            futures = [executor.submit(_process_recursive_bp_worker, t) for t in tasks]
-            for fut in as_completed(futures):
-                results.append(fut.result())
-
+            results = list(executor.map(_process_recursive_bp_worker, tasks))
+    
+        # -------------------------
         # Collect results
-        results = [
-            df for df in results
-            if not df.empty and not df.isna().all().all()
-        ]
+        # -------------------------
+    
+        # results = [
+        #     df for df in results
+        #     if not df.empty and not df.isna().all().all()
+        # ]
+        results = [df for df in results if df is not None]
         cluster_ad = pd.concat(results, ignore_index=True)
-        print("Elapsed:", time.perf_counter() - start)
 
         # Save breakpoints
         cluster_ad.to_csv(breakpoints_file)
@@ -332,14 +449,17 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         end = time.perf_counter()
         execution_time = (end - start)/60
         print(f"Successfully identified breakpoints. Execution time: {execution_time:.2f} mins")
+        ##### Return to stop execution here (only for saving all breakpoints for analysis, remove again later!!!) #####
+        return
 
     # -----------------------------------------------------------------------    
     # Annotating CNV status of each segment
     # ----------------------------------------------------------------------- 
     
     breakpoints = cluster_ad.copy()
-    os.makedirs(outdir+"/outs", exist_ok=True)
-    results_file=outdir+"/outs/result_table.tsv.gz"
+    outs_dir = "/outs_bp_pruned"
+    os.makedirs(outdir+outs_dir, exist_ok=True)
+    results_file=outdir+outs_dir+"/result_table.tsv.gz"
     if resume and os.path.exists(results_file): # Resume if results file already exists
         print(f"Resuming: {results_file} already exists. Skipping calculation.")
         somies_ad=pd.read_csv(results_file, index_col=0, sep="\t") # Read results file that already exists
@@ -354,43 +474,87 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 
         # Convert breakpoints into segment annotations for each cell
         cluster_file = outdir+'/clusters.json'
-        if resume and os.path.exists(cluster_file): # Resume if file already exists 
-            with open(outdir + '/clusters.json', 'r') as f:
-                clusters = json.load(f)
-        else: 
-            clusters={}
-            for cell in breakpoints["cell"].unique():
+        # if resume and os.path.exists(cluster_file): # Resume if file already exists 
+        #     with open(outdir + '/clusters.json', 'r') as f:
+        #         clusters = json.load(f)
+        # else: 
+        #     clusters={}
+        #     for cell in breakpoints["cell"].unique():
             
-                counter=1
-                cluster_list=[]
+        #         counter=1
+        #         cluster_list=[]
             
-                for chrom in unique_chroms:
+        #         for chrom in unique_chroms:
 
-                    # Extract all breakpoints from this chromosome
-                    bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
-                                                        (breakpoints.cell==cell) ]
-                
-                    # If no breakpoints exist for this chromsome, save all windows as one segment
-                    if bp_chrom.empty:
-                        cluster_list += [counter] * num_bins_chrom[chrom]
-                    else:
+        #             # Extract all breakpoints from this chromosome
+        #             # bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
+        #             #                                     (breakpoints.cell==cell)]
                     
-                        # Otherwise, calculate the length of each segment (in right order)
-                        bp_chrom = sorted([0,num_bins_chrom[chrom]]+bp_chrom.tolist())
-                        segment_size = np.diff(bp_chrom)
-                    
-                        # Add the indices for each segment
-                        cluster_list += np.repeat(range(counter,len(segment_size)+counter),segment_size).tolist()
+        #             # Remove None entry entirely such that bp_chrom.empty == True, otherwise will fall into else case and throw error
+        #             bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
+        #                                                 (breakpoints.cell==cell) &
+        #                                                 breakpoints.breakpoint.notna()].astype(int)
                 
-                    # Decide which index the next segment gets
-                    counter = max(cluster_list)+1
+        #             # If no breakpoints exist for this chromsome, save all windows as one segment
+        #             if bp_chrom.empty:
+        #                 cluster_list += [counter] * num_bins_chrom[chrom]
+        #             else:
+                    
+        #                 # Otherwise, calculate the length of each segment (in right order)
+        #                 bp_chrom = sorted([0,num_bins_chrom[chrom]]+bp_chrom.tolist())
+        #                 segment_size = np.diff(bp_chrom)
+                    
+        #                 # Add the indices for each segment
+        #                 cluster_list += np.repeat(range(counter,len(segment_size)+counter),segment_size).tolist()
+                
+        #             # Decide which index the next segment gets
+        #             counter = max(cluster_list)+1
         
-                # Save all indices as new dictonary entry
-                clusters[cell]=cluster_list
+        #         # Save all indices as new dictonary entry
+        #         clusters[cell]=cluster_list
 
-            # Save clusters
-            with open(outdir+'/clusters.json', 'w') as f:
-                json.dump(clusters, f)
+        #     # Save clusters
+        #     with open(outdir+'/clusters.json', 'w') as f:
+        #         json.dump(clusters, f)
+
+        clusters={}
+        for cell in breakpoints["cell"].unique():
+        
+            counter=1
+            cluster_list=[]
+        
+            for chrom in unique_chroms:
+
+                # Extract all breakpoints from this chromosome
+                # bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
+                #                                     (breakpoints.cell==cell)]
+                
+                # Remove None entry entirely such that bp_chrom.empty == True, otherwise will fall into else case and throw error
+                bp_chrom = breakpoints.breakpoint[(breakpoints.seq==chrom) & 
+                                                    (breakpoints.cell==cell) &
+                                                    breakpoints.breakpoint.notna()].astype(int)
+            
+                # If no breakpoints exist for this chromsome, save all windows as one segment
+                if bp_chrom.empty:
+                    cluster_list += [counter] * num_bins_chrom[chrom]
+                else:
+                
+                    # Otherwise, calculate the length of each segment (in right order)
+                    bp_chrom = sorted([0,num_bins_chrom[chrom]]+bp_chrom.tolist())
+                    segment_size = np.diff(bp_chrom)
+                
+                    # Add the indices for each segment
+                    cluster_list += np.repeat(range(counter,len(segment_size)+counter),segment_size).tolist()
+            
+                # Decide which index the next segment gets
+                counter = max(cluster_list)+1
+    
+            # Save all indices as new dictonary entry
+            clusters[cell]=cluster_list
+
+        # Save clusters
+        with open(outdir+'/clusters.json', 'w') as f:
+            json.dump(clusters, f)
 
         # Impute copy number status for each cell
         print("Watson proceeds with due caution--as always--while Holmes investigates beyond the obvious.")
@@ -428,10 +592,10 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         print(f"Successfully identified somies. Execution time: {execution_time:.2f} mins")
 
         # Save the results as csv files
-        int_ad.to_csv(outdir+"/outs/integer_states.tsv.gz", sep="\t", index=True, compression="gzip")
-        cont_ad.to_csv(outdir+"/outs/continuous_scores.tsv.gz", sep="\t", index=True, compression="gzip")
-        somies_holmes_ad.to_csv(outdir+"/outs/result_table_holmes.tsv.gz", sep="\t", index=True, compression="gzip")
-        somies_watson_ad.to_csv(outdir+"/outs/result_table_watson.tsv.gz", sep="\t", index=True, compression="gzip")
+        int_ad.to_csv(outdir+outs_dir+"/integer_states.tsv.gz", sep="\t", index=True, compression="gzip")
+        cont_ad.to_csv(outdir+outs_dir+"/continuous_scores.tsv.gz", sep="\t", index=True, compression="gzip")
+        somies_holmes_ad.to_csv(outdir+outs_dir+"/result_table_holmes.tsv.gz", sep="\t", index=True, compression="gzip")
+        somies_watson_ad.to_csv(outdir+outs_dir+"/result_table_watson.tsv.gz", sep="\t", index=True, compression="gzip")
         somies_ad.to_csv(results_file, sep="\t", index=True, compression="gzip")
 
         print(
@@ -453,7 +617,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
 )
 
         sf_ad = pd.DataFrame.from_dict(scaling_factors, orient='index', columns=['s'])
-        sf_ad.to_csv(outdir+"/outs/scaling_factors.tsv.gz", sep="\t", index=True, compression="gzip")
+        sf_ad.to_csv(outdir+outs_dir+"/scaling_factors.tsv.gz", sep="\t", index=True, compression="gzip")
 
     # ----------------------------------------------------------------------- 
     # Plot the result as a karyogram
@@ -463,7 +627,7 @@ def epiAneufinder(fragment_file, outdir, genome_file,
         print("Plot karyogram...")
         start = time.perf_counter()
 
-        karyo_gainloss(somies_ad, outdir+"/outs/Karyogram.png", title=title_karyo)
+        karyo_gainloss(somies_ad, outdir+outs_dir+"/Karyogram.png", title=title_karyo)
 
         end = time.perf_counter()
         execution_time = (end - start)/60
