@@ -1,0 +1,22 @@
+name: pyEpiAneufinder
+description: |
+  pyEpiAneufinder identifies copy number variations (CNVs) from single-cell
+  ATAC-seq data and provides utilities for CNV visualization, subclone
+  annotation, and karyotype-level summary metrics.
+project_home: https://github.com/macelik/pyEpiAneufinder
+documentation_home: https://pyepianeufinder.readthedocs.io/
+publications:
+  - 10.1038/s41467-023-41076-1
+install:
+  pypi: pyEpiAneufinder
+tags:
+  - CNV
+  - scATAC-seq
+  - epigenomics
+  - single-cell
+license: GPL-3.0-only
+version: 0.3.6
+contact:
+  - macelik
+test_command: pip install ".[test]" && pytest tests -v
+category: ecosystem
